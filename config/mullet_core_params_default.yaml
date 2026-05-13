@@ -1,0 +1,29 @@
+/**:
+  ros__parameters:
+    # PX4 instance number. instance 0 uses /fmu/... topics; instance N uses /px4_N/fmu/...
+    vehicle_instance: 0
+
+    # Soft real-time supervisor loop. PX4's offboard minimum is lower, but this gives jitter margin.
+    control_rate_hz: 50.0
+    offboard_warmup_s: 1.0
+    command_retry_interval_s: 1.0
+
+    # Multicopter takeoff and hover targets use PX4 NED coordinates.
+    takeoff_altitude_m: 2.0
+    takeoff_acceptance_m: 0.25
+    hover_acceptance_radius_m: 0.25
+    hover_yaw_rad: 0.0
+
+    # Temporary compatibility command format: std_msgs/Float32MultiArray [vx_ned_mps, vy_ned_mps, mode].
+    # Only mode=1 is accepted. Long term, replace this with a typed command message.
+    command_topic: "command"
+    land_topic: "land_request"
+    command_timeout_s: 0.25
+
+    # Safety clamps for external velocity commands.
+    max_vx_ned_mps: 1.0
+    max_vy_ned_mps: 1.0
+    max_vz_ned_mps: 0.5
+
+    # Low-frequency control-loop timing diagnostics.
+    timing_log_period_s: 1.0
