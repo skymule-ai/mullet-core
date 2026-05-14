@@ -287,6 +287,8 @@ void DroneStateMachine::handleFailsafeHold(const rclcpp::Time & current_time)
     publishHoverSetpoint();
   } else {
     transitionTo(DroneState::kLanding, "local position invalid during failsafe hold");
+    px4_->land();
+    last_vehicle_command_time_ = current_time;
     return;
   }
 
