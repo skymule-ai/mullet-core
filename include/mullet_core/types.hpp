@@ -22,6 +22,16 @@ enum class DroneState : std::uint8_t
   kDisarmed,
 };
 
+struct PositionCommand
+{
+  float x_ned_m{0.0F};
+  float y_ned_m{0.0F};
+  float z_ned_m{0.0F};
+  float yaw_rad{0.0F};
+  rclcpp::Time stamp{};
+  bool valid{false};
+};
+
 struct VelocityCommand
 {
   float vx_ned_mps{0.0F};
@@ -33,6 +43,7 @@ struct VelocityCommand
 
 struct ExternalCommandBuffer
 {
+  PositionCommand latest_position{};
   VelocityCommand latest_velocity{};
   bool land_requested{false};
 };
