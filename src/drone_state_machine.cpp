@@ -286,7 +286,10 @@ void DroneStateMachine::handleFailsafeHold(const rclcpp::Time & current_time)
   if (px4_->localPositionValid()) {
     publishHoverSetpoint();
   } else {
-    publishZeroVelocityHold();
+    transitionTo(DroneState::kLanding, "local position invalid during failsafe hold");
+    px4_->land();
+    last_vehicle_command_time_ = current_time;
+    return;
   }
 
   if (commandFresh(current_time)) {
@@ -350,12 +353,6 @@ void DroneStateMachine::publishHoverSetpoint()
 {
   px4_->publishOffboardControlMode(true, false);
   px4_->publishPositionSetpoint(hover_x_ned_m_, hover_y_ned_m_, hover_z_ned_m_, hover_yaw_rad_);
-}
-
-void DroneStateMachine::publishZeroVelocityHold()
-{
-  px4_->publishOffboardControlMode(false, true);
-  px4_->publishVelocitySetpoint(0.0F, 0.0F, 0.0F, hover_yaw_rad_);
 }
 
 void DroneStateMachine::updateTimingStats(const rclcpp::Time & current_time)

@@ -42,7 +42,6 @@ private:
   void latchHoverTarget();
   void publishTakeoffSetpoint();
   void publishHoverSetpoint();
-  void publishZeroVelocityHold();
   void updateTimingStats(const rclcpp::Time & now);
   void maybeLogTiming(const rclcpp::Time & now);
 
