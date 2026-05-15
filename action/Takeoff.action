@@ -1,0 +1,12 @@
+float32 altitude_m
+float32 yaw_rad
+bool use_current_yaw
+---
+bool success
+string message
+---
+string state
+float32 current_altitude_m
+float32 target_altitude_m
+float32 altitude_error_m
+float32 progress

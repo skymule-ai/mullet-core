@@ -106,6 +106,11 @@ void Px4Interface::setOffboardMode()
   publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 6.0F);
 }
 
+void Px4Interface::setPositionMode()
+{
+  publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 3.0F);
+}
+
 void Px4Interface::land()
 {
   publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND);
