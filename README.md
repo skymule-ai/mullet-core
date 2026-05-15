@@ -6,7 +6,7 @@
 
 PX4 remains the hard real-time flight controller. It owns attitude stabilization, motor mixing, inner-loop control, and emergency failsafe execution.
 
-`mullet_core` is a deterministic soft real-time offboard supervisor. It owns continuous offboard proof-of-life publication, setpoint streaming, mode/arm/land transitions, external command validation, and stale-command fallback behavior.
+`mullet_core` is a deterministic soft real-time offboard supervisor. It owns explicit takeoff action handling, continuous offboard proof-of-life publication after takeoff is requested, setpoint streaming, mode/arm/land transitions, external command validation, and stale-command fallback behavior.
 
 High-level planners, mission generation, optimization, and expensive diagnostics should run in separate nodes, not inside this control loop.
 
@@ -32,18 +32,45 @@ mullet_core_node
 
 ```text
 INIT
+READY
+TAKEOFF_REQUESTED
 WARMUP_SETPOINTS
 REQUEST_OFFBOARD
 REQUEST_ARM
 TAKEOFF
 HOVER
 COMMAND
+CANCELING_TO_LAND
 LANDING
+TAKEOFF_FAILED
+TAKEOFF_CANCELED
 FAILSAFE_HOLD
 DISARMED
 ```
 
+Launch is passive: reaching `READY` means PX4 status and local position are available, but the node will not request Offboard, arm, or take off until a takeoff action goal is accepted.
+
 `REQUEST_OFFBOARD` and `REQUEST_ARM` are intentionally separate for clearer real-hardware logs and safer debugging.
+
+## Takeoff Action
+
+Takeoff is commanded through the `takeoff` action:
+
+```text
+mullet_core/action/Takeoff
+goal: altitude_m, yaw_rad, use_current_yaw
+result: success, message
+feedback: state, current_altitude_m, target_altitude_m, altitude_error_m, progress
+```
+
+Goals are accepted only from `READY`, with valid PX4 telemetry, a disarmed vehicle, finite yaw when requested, and an altitude inside `min_takeoff_altitude_m` / `max_takeoff_altitude_m`.
+
+Explicit-yaw goals (`use_current_yaw=false`) complete only after the vehicle is within
+`takeoff_yaw_tolerance_rad` of the requested yaw while altitude and vertical velocity
+are settled for `hover_settle_time_s`. Goals using the current yaw keep the existing
+altitude/vertical-settle completion behavior.
+
+Cancellation before this node sends an arm request returns to `READY`. Cancellation after an arm request, even before PX4 reports armed, requests Position mode as a best-effort stabilization step, commands `NAV_LAND`, and waits for disarm.
 
 ## Topics
 

@@ -11,8 +11,19 @@
     # Multicopter takeoff and hover targets use PX4 NED coordinates.
     takeoff_altitude_m: 2.0
     takeoff_acceptance_m: 0.25
+    takeoff_yaw_tolerance_rad: 0.174533
     hover_acceptance_radius_m: 0.25
     hover_yaw_rad: 0.0
+    min_takeoff_altitude_m: 0.5
+    max_takeoff_altitude_m: 10.0
+    warmup_timeout_s: 3.0
+    request_offboard_timeout_s: 5.0
+    request_arm_timeout_s: 5.0
+    takeoff_timeout_s: 20.0
+    landing_timeout_s: 30.0
+    hover_altitude_tolerance_m: 0.25
+    hover_vertical_velocity_tolerance_mps: 0.25
+    hover_settle_time_s: 1.0
 
     # Temporary compatibility command format: std_msgs/Float32MultiArray [vx_ned_mps, vy_ned_mps, mode].
     # Only mode=1 is accepted. Long term, replace this with a typed command message.

@@ -26,6 +26,7 @@ public:
 
   void arm();
   void setOffboardMode();
+  void setPositionMode();
   void land();
 
   bool hasLocalPosition() const;
