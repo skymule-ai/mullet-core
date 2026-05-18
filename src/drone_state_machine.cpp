@@ -1,4 +1,5 @@
 #include "mullet_core/drone_state_machine.hpp"
+#include "mullet_core/vehicle_instance.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -48,7 +49,7 @@ DroneStateMachine::DroneStateMachine()
 
   const auto fmu_prefix =
     config_.vehicle_instance == 0 ? std::string{} : "/px4_" + std::to_string(config_.vehicle_instance);
-  const auto target_system = static_cast<std::uint8_t>(config_.vehicle_instance + 1);
+  const auto target_system = targetSystemFromVehicleInstance(config_.vehicle_instance);
   px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix, target_system);
 
   command_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
@@ -72,7 +73,8 @@ DroneStateMachine::DroneStateMachine()
   RCLCPP_INFO(
     get_logger(),
     "mullet_core started: instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz",
-    config_.vehicle_instance, fmu_prefix.c_str(), target_system, config_.control_rate_hz);
+    config_.vehicle_instance, fmu_prefix.c_str(), static_cast<unsigned int>(target_system),
+    config_.control_rate_hz);
 }
 
 void DroneStateMachine::loadParameters()

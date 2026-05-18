@@ -6,15 +6,75 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironment
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+MIN_VEHICLE_INSTANCE = 0
+MAX_VEHICLE_INSTANCE = 254
+
+
+def _parse_int(value: str, field_name: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an integer, got '{value}'") from exc
+
+
+def _validate_instance(instance: int) -> None:
+    if instance < MIN_VEHICLE_INSTANCE or instance > MAX_VEHICLE_INSTANCE:
+        raise ValueError(
+            "vehicle_instance must be in "
+            f"[{MIN_VEHICLE_INSTANCE}, {MAX_VEHICLE_INSTANCE}] "
+            "so target_system maps to PX4 system IDs [1, 255]"
+        )
+
+
+def _parse_explicit_instances(raw_instances: str) -> list[int] | None:
+    if not raw_instances.strip():
+        return None
+
+    instances = []
+    seen = set()
+    for token in raw_instances.split(","):
+        value = token.strip()
+        if not value:
+            raise ValueError("px4_instances must not contain empty tokens")
+        instance = _parse_int(value, "px4_instances")
+        _validate_instance(instance)
+        if instance in seen:
+            raise ValueError(f"px4_instances contains duplicate instance {instance}")
+        seen.add(instance)
+        instances.append(instance)
+
+    return sorted(instances)
+
+
+def _parse_offset_instances(num_robots_raw: str, offset_raw: str) -> list[int]:
+    num_robots = _parse_int(num_robots_raw.strip(), "num_robots")
+    offset = _parse_int(offset_raw.strip(), "px4_instance_offset")
+
+    if num_robots < 1:
+        raise ValueError("num_robots must be at least 1")
+    if offset < MIN_VEHICLE_INSTANCE:
+        raise ValueError(f"px4_instance_offset must be at least {MIN_VEHICLE_INSTANCE}")
+
+    last_instance = offset + num_robots - 1
+    if last_instance > MAX_VEHICLE_INSTANCE:
+        raise ValueError(
+            "px4_instance_offset + num_robots - 1 must be <= "
+            f"{MAX_VEHICLE_INSTANCE}"
+        )
+
+    return list(range(offset, offset + num_robots))
+
 
 def _parse_instances(context) -> list[int]:
-    raw_instances = LaunchConfiguration("px4_instances").perform(context).strip()
-    if raw_instances:
-        return sorted(int(value.strip()) for value in raw_instances.split(",") if value.strip())
+    raw_instances = LaunchConfiguration("px4_instances").perform(context)
+    explicit_instances = _parse_explicit_instances(raw_instances)
+    if explicit_instances is not None:
+        return explicit_instances
 
-    num_robots = int(LaunchConfiguration("num_robots").perform(context))
-    offset = int(LaunchConfiguration("px4_instance_offset").perform(context))
-    return list(range(offset, offset + num_robots))
+    return _parse_offset_instances(
+        LaunchConfiguration("num_robots").perform(context),
+        LaunchConfiguration("px4_instance_offset").perform(context),
+    )
 
 
 def _instance_to_namespace(instance: int) -> str:
@@ -62,7 +122,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "px4_instances",
                 default_value="0",
-                description="Comma-separated PX4 instance list. Overrides num_robots/px4_instance_offset.",
+                description=(
+                    "Comma-separated PX4 instance list in [0, 254]. "
+                    "Overrides num_robots/px4_instance_offset."
+                ),
             ),
             DeclareLaunchArgument(
                 "num_robots",
