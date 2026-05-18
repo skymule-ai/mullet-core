@@ -84,7 +84,9 @@ PX4 topics use PX4-compatible QoS: best effort, transient local, keep last depth
 | subscribe | `/fmu/out/vehicle_local_position` |
 | subscribe | `/fmu/out/vehicle_status_v1` |
 
-For PX4 instance `N > 0`, topics are prefixed with `/px4_N` and `target_system` is `N + 1`.
+PX4 instances must be in `[0, 254]` so `target_system = instance + 1` maps to
+PX4 system IDs `[1, 255]` without wraparound. For PX4 instance `N > 0`, topics
+are prefixed with `/px4_N` and `target_system` is `N + 1`.
 
 ## External Commands
 
@@ -117,6 +119,29 @@ Multi-instance example:
 ```bash
 ros2 launch mullet_core mullet_core.launch.py px4_instances:=1,2
 ```
+
+The launch file rejects duplicate `px4_instances` within one launch invocation.
+Each node also validates that its own `vehicle_instance` is in `[0, 254]`.
+
+## Takeoff Action Client Example
+
+```
+ros2 action send_goal /px4_1/takeoff mullet_core/action/Takeoff "{altitude_m: 2.0, yaw_rad: 0.0, use_current_yaw: true}" --feedback
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `vehicle_instance` | int | `0` | PX4 instance ID (0–254); determines topic prefix and target system |
+| `control_rate_hz` | double | `50.0` | State machine and setpoint publish rate |
+| `min_takeoff_altitude_m` | float | `0.5` | Minimum acceptable takeoff altitude |
+| `max_takeoff_altitude_m` | float | `100.0` | Maximum acceptable takeoff altitude |
+| `takeoff_yaw_tolerance_rad` | float | `0.1` | Yaw error threshold for completion |
+| `hover_settle_time_s` | float | `2.0` | Duration altitude and velocity must be settled before completion |
+| `velocity_clamp_mps` | float | `5.0` | Maximum NED velocity magnitude from external commands |
+| `command_timeout_s` | float | `1.0` | Time before stale velocity command is dropped |
+
 
 ## Safety Notes
 

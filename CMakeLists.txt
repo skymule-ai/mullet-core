@@ -56,6 +56,23 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
+
+  ament_add_gtest(test_vehicle_instance
+    test/test_vehicle_instance.cpp
+  )
+  target_compile_features(test_vehicle_instance PUBLIC cxx_std_17)
+  target_include_directories(test_vehicle_instance PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_pytest_test(test_mullet_core_launch
+    test/test_mullet_core_launch.py
+  )
+endif()
+
 ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()
