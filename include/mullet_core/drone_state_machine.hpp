@@ -9,9 +9,15 @@
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 
+#include "mullet_core/action/land.hpp"
 #include "mullet_core/action/takeoff.hpp"
 #include "mullet_core/px4_interface.hpp"
 #include "mullet_core/types.hpp"
+
+namespace mullet_core::state_machine_detail
+{
+class ActionLifecycleCoordinator;
+}  // namespace mullet_core::state_machine_detail
 
 namespace mullet_core
 {
@@ -19,9 +25,12 @@ namespace mullet_core
 class DroneStateMachine : public rclcpp::Node
 {
 public:
-  DroneStateMachine();
+  explicit DroneStateMachine(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ~DroneStateMachine() override;
 
 private:
+  using Land = mullet_core::action::Land;
+  using GoalHandleLand = rclcpp_action::ServerGoalHandle<Land>;
   using Takeoff = mullet_core::action::Takeoff;
   using GoalHandleTakeoff = rclcpp_action::ServerGoalHandle<Takeoff>;
 
@@ -35,6 +44,11 @@ private:
   rclcpp_action::CancelResponse handleTakeoffCancel(
     const std::shared_ptr<GoalHandleTakeoff> goal_handle);
   void handleTakeoffAccepted(const std::shared_ptr<GoalHandleTakeoff> goal_handle);
+  rclcpp_action::GoalResponse handleLandGoal(
+    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Land::Goal> goal);
+  rclcpp_action::CancelResponse handleLandCancel(
+    const std::shared_ptr<GoalHandleLand> goal_handle);
+  void handleLandAccepted(const std::shared_ptr<GoalHandleLand> goal_handle);
 
   void transitionTo(DroneState new_state, const char * reason);
   void handleInit(const rclcpp::Time & now);
@@ -49,12 +63,16 @@ private:
   void handleCancelingToLand(const rclcpp::Time & now);
   void handleLanding(const rclcpp::Time & now);
   void handleFailsafeHold(const rclcpp::Time & now);
+  void handleDisarmed(const rclcpp::Time & now);
 
   bool commandFresh(const rclcpp::Time & now) const;
   bool takeoffSettled(const rclcpp::Time & now);
   bool takeoffYawSettled(float current_heading, float * yaw_error_rad) const;
   bool phaseTimedOut(const rclcpp::Time & now, double timeout_s) const;
   bool haveActiveTakeoffGoal() const;
+  bool haveActiveLandGoal() const;
+  bool activeTakeoffState() const;
+  bool landActionAllowedFromState() const;
   bool goalCancelRequested() const;
   bool shouldRecoverThroughLanding() const;
   bool latchTakeoffTarget();
@@ -64,11 +82,17 @@ private:
   void publishTakeoffSetpoint();
   void publishHoverSetpoint();
   void publishTakeoffFeedback(float progress);
+  void publishLandFeedback(const rclcpp::Time & now);
   void succeedTakeoffGoal(const char * message);
   void abortTakeoffGoal(const char * message);
   void cancelTakeoffGoal(const char * message);
+  void preemptTakeoffForLandAction();
+  void succeedLandGoal(const char * message);
+  void abortLandGoal(const char * message);
+  void startLanding(const char * reason);
   void beginLanding(const char * reason, bool request_position_mode);
   void failTakeoffOrLand(const char * reason);
+  void clearExternalCommandBuffer();
   void resetTakeoffAttemptState();
   void updateTimingStats(const rclcpp::Time & now);
   void maybeLogTiming(const rclcpp::Time & now);
@@ -81,6 +105,7 @@ private:
 
   DroneState state_{DroneState::kInit};
   rclcpp::Time state_enter_time_{};
+  rclcpp::Time landing_start_time_{};
   rclcpp::Time last_vehicle_command_time_{};
   rclcpp::Time last_tick_time_{};
   rclcpp::Time last_timing_log_time_{};
@@ -102,8 +127,7 @@ private:
   std::string command_topic_{"command"};
   std::string land_topic_{"land_request"};
 
-  std::shared_ptr<GoalHandleTakeoff> active_takeoff_goal_{};
-  bool takeoff_cancel_requested_{false};
+  std::unique_ptr<state_machine_detail::ActionLifecycleCoordinator> action_lifecycle_;
   bool takeoff_arm_requested_{false};
   bool active_takeoff_uses_current_yaw_{true};
   float active_takeoff_target_yaw_rad_{0.0F};
@@ -112,6 +136,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr command_sub_;
   rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr land_sub_;
   rclcpp_action::Server<Takeoff>::SharedPtr takeoff_action_server_;
+  rclcpp_action::Server<Land>::SharedPtr land_action_server_;
   rclcpp::TimerBase::SharedPtr control_timer_;
 };
 

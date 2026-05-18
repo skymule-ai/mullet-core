@@ -72,6 +72,23 @@ altitude/vertical-settle completion behavior.
 
 Cancellation before this node sends an arm request returns to `READY`. Cancellation after an arm request, even before PX4 reports armed, requests Position mode as a best-effort stabilization step, commands `NAV_LAND`, and waits for disarm.
 
+## Land Action
+
+Managed landing is commanded through the `land` action:
+
+```text
+mullet_core/action/Land
+goal: empty
+result: success, message
+feedback: state, armed, elapsed_s
+```
+
+Land action goals are accepted from `HOVER` or `COMMAND` when PX4 reports the vehicle armed. They are also accepted during an active takeoff in `TAKEOFF_REQUESTED`, `WARMUP_SETPOINTS`, `REQUEST_OFFBOARD`, `REQUEST_ARM`, or `TAKEOFF`. A land action preempts the active takeoff goal immediately. If no arm request has been sent and PX4 is already disarmed, the land action succeeds without sending `NAV_LAND`; after an arm request or once armed, the node enters `LANDING` and keeps retrying `NAV_LAND` until PX4 reports disarmed. Once accepted, landing is non-cancelable: external velocity commands are ignored and takeoff goals are rejected.
+
+The action succeeds with `Vehicle disarmed after landing` only after PX4 reports disarmed. If `landing_timeout_s` expires while still armed, the action aborts with `Landing timed out while vehicle is still armed`, but the state machine remains in `LANDING` and continues retrying `NAV_LAND` until disarm/recovery.
+
+The `land_request` topic remains the emergency escape hatch. It can preempt broader states such as takeoff. If it arrives while a land action is already active, it is treated as idempotent and the active land action continues.
+
 ## Topics
 
 PX4 topics use PX4-compatible QoS: best effort, transient local, keep last depth 1.
@@ -127,6 +144,20 @@ Each node also validates that its own `vehicle_instance` is in `[0, 254]`.
 
 ```
 ros2 action send_goal /px4_1/takeoff mullet_core/action/Takeoff "{altitude_m: 2.0, yaw_rad: 0.0, use_current_yaw: true}" --feedback
+```
+
+## Land Action Client Example
+
+For PX4 instance `0`:
+
+```bash
+ros2 action send_goal /land mullet_core/action/Land "{}" --feedback
+```
+
+For PX4 instance `1`:
+
+```bash
+ros2 action send_goal /px4_1/land mullet_core/action/Land "{}" --feedback
 ```
 
 ## Parameters
