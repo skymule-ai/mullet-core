@@ -1,7 +1,8 @@
 /**:
   ros__parameters:
-    # PX4 instance number. instance 0 uses /fmu/... topics; instance N uses /px4_N/fmu/...
+    # PX4 instance number. instance 0 uses /fmu/... topics; instance N uses /<prefix>_N/fmu/...
     vehicle_instance: 1
+    px4_namespace_prefix: "px4"
 
     # Soft real-time supervisor loop. PX4's offboard minimum is lower, but this gives jitter margin.
     control_rate_hz: 50.0

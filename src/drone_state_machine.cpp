@@ -28,7 +28,9 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   loadParameters();
 
   const auto fmu_prefix =
-    config_.vehicle_instance == 0 ? std::string{} : "/px4_" + std::to_string(config_.vehicle_instance);
+    config_.vehicle_instance == 0 || config_.px4_namespace_prefix.empty() ?
+    std::string{} :
+    "/" + config_.px4_namespace_prefix + "_" + std::to_string(config_.vehicle_instance);
   const auto target_system = targetSystemFromVehicleInstance(config_.vehicle_instance);
   px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix, target_system);
   action_lifecycle_ = std::make_unique<state_machine_detail::ActionLifecycleCoordinator>();
@@ -68,6 +70,8 @@ DroneStateMachine::~DroneStateMachine() = default;
 void DroneStateMachine::loadParameters()
 {
   config_.vehicle_instance = declare_parameter<int>("vehicle_instance", config_.vehicle_instance);
+  config_.px4_namespace_prefix = declare_parameter<std::string>(
+    "px4_namespace_prefix", config_.px4_namespace_prefix);
   config_.control_rate_hz = declare_parameter<double>("control_rate_hz", config_.control_rate_hz);
   config_.offboard_warmup_s = declare_parameter<double>("offboard_warmup_s", config_.offboard_warmup_s);
   config_.command_retry_interval_s = declare_parameter<double>(

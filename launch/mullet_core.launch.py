@@ -78,7 +78,7 @@ def _parse_instances(context) -> list[int]:
 
 
 def _instance_to_namespace(instance: int) -> str:
-    return "" if instance == 0 else f"/px4_{instance}"
+    return "" if instance == 0 else f"/uav_{instance}"
 
 
 def launch_setup(context, *args, **kwargs):
@@ -105,7 +105,11 @@ def launch_setup(context, *args, **kwargs):
                 name=f"mullet_core_{instance}",
                 namespace=namespace,
                 output="screen",
-                parameters=[config_path, {"vehicle_instance": instance}],
+                parameters=[
+                    config_path,
+                    {"vehicle_instance": instance},
+                    {"px4_namespace_prefix": LaunchConfiguration("px4_namespace_prefix")},
+                ],
             )
         )
 
@@ -141,6 +145,11 @@ def generate_launch_description() -> LaunchDescription:
                 "config_dir",
                 default_value=default_config_dir,
                 description="Directory containing mullet_core_params_<instance>.yaml files.",
+            ),
+            DeclareLaunchArgument(
+                "px4_namespace_prefix",
+                default_value="uav",
+                description="PX4 namespace prefix for fmu topics (e.g., px4 or uav).",
             ),
             OpaqueFunction(function=launch_setup),
         ]
