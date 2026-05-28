@@ -405,6 +405,9 @@ TEST_F(
   DroneStateMachineBehaviorPrefixedTopics,
   NonZeroVehicleInstanceUsesConfiguredNamespacePrefixForPx4Topics)
 {
+  auto before_telemetry = sendTakeoffGoal();
+  EXPECT_EQ(before_telemetry, nullptr);
+
   publishReadyAndWait();
 
   auto handle = sendTakeoffGoal();
