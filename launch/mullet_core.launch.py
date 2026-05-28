@@ -78,7 +78,7 @@ def _parse_instances(context) -> list[int]:
 
 
 def _instance_to_namespace(instance: int, namespace_prefix: str) -> str:
-    return "" if instance == 0 else f"/{namespace_prefix}_{instance}"
+    return "" if instance == 0 or not namespace_prefix else f"/{namespace_prefix}_{instance}"
 
 
 def launch_setup(context, *args, **kwargs):
