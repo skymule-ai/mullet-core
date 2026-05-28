@@ -94,6 +94,14 @@ def launch_setup(context, *args, **kwargs):
         fallback_config = os.path.join(config_dir, "mullet_core_params_default.yaml")
         config_path = instance_config if os.path.exists(instance_config) else fallback_config
         namespace = _instance_to_namespace(instance, namespace_prefix)
+        params = [
+            config_path,
+            {"vehicle_instance": instance},
+        ]
+        
+        if namespace_prefix:
+            params.append({"px4_namespace_prefix": namespace_prefix})
+
 
         print(
             f"[mullet_core launch] instance {instance}: loading '{config_path}'",
@@ -107,11 +115,7 @@ def launch_setup(context, *args, **kwargs):
                 name=f"mullet_core_{instance}",
                 namespace=namespace,
                 output="screen",
-                parameters=[
-                    config_path,
-                    {"vehicle_instance": instance},
-                    {"px4_namespace_prefix": LaunchConfiguration("px4_namespace_prefix")},
-                ],
+                parameters=params,
             )
         )
 
@@ -150,8 +154,11 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "px4_namespace_prefix",
-                default_value="uav",
-                description="PX4 namespace prefix for fmu topics (e.g., px4 or uav).",
+                default_value="",
+                description=(
+                    "Optional PX4 namespace prefix override. "
+                    "Leave empty to use the value from the YAML config."
+                ),
             ),
             OpaqueFunction(function=launch_setup),
         ]
