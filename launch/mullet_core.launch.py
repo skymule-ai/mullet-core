@@ -77,8 +77,8 @@ def _parse_instances(context) -> list[int]:
     )
 
 
-def _instance_to_namespace(instance: int) -> str:
-    return "" if instance == 0 else f"/uav_{instance}"
+def _instance_to_namespace(instance: int, namespace_prefix: str) -> str:
+    return "" if instance == 0 else f"/{namespace_prefix}_{instance}"
 
 
 def launch_setup(context, *args, **kwargs):
@@ -87,11 +87,13 @@ def launch_setup(context, *args, **kwargs):
     config_dir = LaunchConfiguration("config_dir").perform(context)
     nodes = []
 
+    namespace_prefix = LaunchConfiguration("px4_namespace_prefix").perform(context)
+
     for instance in _parse_instances(context):
         instance_config = os.path.join(config_dir, f"mullet_core_params_{instance}.yaml")
         fallback_config = os.path.join(config_dir, "mullet_core_params_default.yaml")
         config_path = instance_config if os.path.exists(instance_config) else fallback_config
-        namespace = _instance_to_namespace(instance)
+        namespace = _instance_to_namespace(instance, namespace_prefix)
 
         print(
             f"[mullet_core launch] instance {instance}: loading '{config_path}'",
