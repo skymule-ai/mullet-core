@@ -122,10 +122,8 @@ def launch_setup(context, *args, **kwargs):
         params = [
             config_path,
             {"vehicle_instance": instance},
+            {"px4_namespace_prefix": namespace_prefix},
         ]
-
-        if namespace_prefix_override:
-            params.append({"px4_namespace_prefix": namespace_prefix_override})
 
 
         print(
