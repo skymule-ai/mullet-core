@@ -1,17 +1,22 @@
-# mullet_core Interactive Docs
+# mullet_core Documentation
 
-This directory contains a self-contained Vite React + TypeScript docs app for
-`mullet_core`. It is intentionally separate from the ROS 2/CMake build.
+This folder contains source documentation for the `mullet_core` ROS 2 package.
+The docs are plain Markdown so they stay reviewable with the C++ state machine
+and do not require a separate frontend build.
 
-## Commands
+## Reading Order
 
-```bash
-npm install
-npm run dev
-npm run typecheck
-npm run build
-```
+1. [State machine](state-machine.md): states, transitions, and guardrails.
+2. [Actions](actions.md): action contracts and lifecycle behavior.
+3. [Configuration](configuration.md): parameters, defaults, launch arguments,
+   and deprecated compatibility parameters.
+4. [PX4 interface](px4-interface.md): topics, QoS, PX4 commands, and
+   multi-instance mapping.
+5. [Testing](testing.md): build, test, and scenario coverage.
 
-The generated `dist/` directory and `node_modules/` are ignored. Documentation
-content lives in `src/data/mulletCoreModel.ts`; update that model in the same PR
-as state-machine behavior changes so the app stays aligned with the C++ code.
+## Maintenance Rule
+
+When state-machine behavior, public actions, launch arguments, or configuration
+defaults change, update these docs in the same change. Keep the docs focused on
+operator-visible behavior and source references; avoid duplicating every branch
+of implementation code.

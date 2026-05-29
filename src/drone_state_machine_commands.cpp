@@ -4,33 +4,45 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 
 namespace mullet_core
 {
 
+namespace
+{
+constexpr std::size_t kCommandVxIndex = 0U;
+constexpr std::size_t kCommandVyIndex = 1U;
+constexpr std::size_t kCommandModeIndex = 2U;
+constexpr std::size_t kMinVelocityCommandSize = 3U;
+constexpr float kVelocityCommandMode = 1.0F;
+constexpr float kCommandModeTolerance = 1e-3F;
+}  // namespace
+
 void DroneStateMachine::onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
   if (state_ == DroneState::kCancelingToLand || state_ == DroneState::kLanding ||
+    state_ == DroneState::kOffboardHold || state_ == DroneState::kDisableOffboardRequested ||
     haveActiveLandGoal())
   {
-    RCLCPP_DEBUG(get_logger(), "Ignoring external command while landing");
+    RCLCPP_DEBUG(get_logger(), "Ignoring external command while landing or in offboard hold");
     return;
   }
 
-  if (msg->data.size() < 3) {
+  if (msg->data.size() < kMinVelocityCommandSize) {
     RCLCPP_WARN(get_logger(), "Invalid command: expected [vx_ned_mps, vy_ned_mps, mode]");
     return;
   }
 
-  const auto vx_ned_mps = msg->data[0];
-  const auto vy_ned_mps = msg->data[1];
-  const auto mode = msg->data[2];
+  const auto vx_ned_mps = msg->data[kCommandVxIndex];
+  const auto vy_ned_mps = msg->data[kCommandVyIndex];
+  const auto mode = msg->data[kCommandModeIndex];
   if (!std::isfinite(vx_ned_mps) || !std::isfinite(vy_ned_mps) || !std::isfinite(mode)) {
     RCLCPP_WARN(get_logger(), "Invalid command: non-finite value rejected");
     return;
   }
-  if (!std::isfinite(mode) || std::fabs(mode - 1.0F) > 1e-3F) {
+  if (std::fabs(mode - kVelocityCommandMode) > kCommandModeTolerance) {
     RCLCPP_WARN(get_logger(), "Invalid command mode %.3f: expected mode=1", mode);
     return;
   }
@@ -132,12 +144,39 @@ bool DroneStateMachine::latchTakeoffTarget()
   takeoff_y_ned_m_ = position.y;
   const auto current_z_ned_m = position.z;
   takeoff_origin_z_ned_m_ = current_z_ned_m;
-  takeoff_z_ned_m_ = current_z_ned_m - static_cast<float>(std::fabs(config_.takeoff_altitude_m));
+  takeoff_z_ned_m_ = current_z_ned_m;
   hover_x_ned_m_ = takeoff_x_ned_m_;
   hover_y_ned_m_ = takeoff_y_ned_m_;
   hover_z_ned_m_ = takeoff_z_ned_m_;
   hover_yaw_rad_ = std::isfinite(position.heading) ? position.heading : static_cast<float>(config_.hover_yaw_rad);
 
+  return true;
+}
+
+bool DroneStateMachine::latchOffboardHoldTarget()
+{
+  if (!px4_->hasLocalPosition()) {
+    RCLCPP_ERROR(get_logger(), "Cannot latch offboard hold target: local position is unavailable");
+    return false;
+  }
+
+  const auto & position = px4_->localPosition();
+  if (!position.xy_valid || !position.z_valid || !std::isfinite(position.heading)) {
+    RCLCPP_ERROR(
+      get_logger(),
+      "Cannot latch offboard hold target: invalid local position xy_valid=%s z_valid=%s heading=%.3f",
+      position.xy_valid ? "true" : "false", position.z_valid ? "true" : "false",
+      position.heading);
+    return false;
+  }
+
+  hover_x_ned_m_ = position.x;
+  hover_y_ned_m_ = position.y;
+  hover_z_ned_m_ = position.z;
+  hover_yaw_rad_ = state_machine_detail::wrapPi(position.heading);
+  RCLCPP_INFO(
+    get_logger(), "Offboard hold target latched: x=%.2f y=%.2f z=%.2f yaw=%.2f",
+    hover_x_ned_m_, hover_y_ned_m_, hover_z_ned_m_, hover_yaw_rad_);
   return true;
 }
 
@@ -207,6 +246,11 @@ void DroneStateMachine::resetTakeoffAttemptState()
   takeoff_arm_requested_ = false;
   active_takeoff_uses_current_yaw_ = true;
   active_takeoff_target_yaw_rad_ = 0.0F;
+}
+
+void DroneStateMachine::resetVehicleCommandRetryTimer()
+{
+  last_vehicle_command_time_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
 }
 
 }  // namespace mullet_core
