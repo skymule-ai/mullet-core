@@ -1,5 +1,7 @@
 import os
 
+import yaml
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
@@ -77,8 +79,26 @@ def _parse_instances(context) -> list[int]:
     )
 
 
-def _instance_to_namespace(instance: int) -> str:
-    return "" if instance == 0 else f"/px4_{instance}"
+def _instance_to_namespace(instance: int, namespace_prefix: str) -> str:
+    return "" if instance == 0 or not namespace_prefix else f"/{namespace_prefix}_{instance}"
+
+
+def _load_namespace_prefix_from_yaml(config_path: str) -> str:
+    try:
+        with open(config_path, "r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise RuntimeError(f"Failed to load YAML config '{config_path}': {exc}") from exc
+
+    for node_config in data.values():
+        if not isinstance(node_config, dict):
+            continue
+        params = node_config.get("ros__parameters")
+        if isinstance(params, dict) and "px4_namespace_prefix" in params:
+            value = params.get("px4_namespace_prefix")
+            return "" if value is None else str(value)
+
+    return ""
 
 
 def launch_setup(context, *args, **kwargs):
@@ -87,11 +107,24 @@ def launch_setup(context, *args, **kwargs):
     config_dir = LaunchConfiguration("config_dir").perform(context)
     nodes = []
 
+    namespace_prefix_override = LaunchConfiguration("px4_namespace_prefix").perform(context)
+
     for instance in _parse_instances(context):
         instance_config = os.path.join(config_dir, f"mullet_core_params_{instance}.yaml")
         fallback_config = os.path.join(config_dir, "mullet_core_params_default.yaml")
         config_path = instance_config if os.path.exists(instance_config) else fallback_config
-        namespace = _instance_to_namespace(instance)
+        namespace_prefix = (
+            namespace_prefix_override
+            if namespace_prefix_override
+            else _load_namespace_prefix_from_yaml(config_path)
+        )
+        namespace = _instance_to_namespace(instance, namespace_prefix)
+        params = [
+            config_path,
+            {"vehicle_instance": instance},
+            {"px4_namespace_prefix": namespace_prefix},
+        ]
+
 
         print(
             f"[mullet_core launch] instance {instance}: loading '{config_path}'",
@@ -105,7 +138,7 @@ def launch_setup(context, *args, **kwargs):
                 name=f"mullet_core_{instance}",
                 namespace=namespace,
                 output="screen",
-                parameters=[config_path, {"vehicle_instance": instance}],
+                parameters=params,
             )
         )
 
@@ -141,6 +174,14 @@ def generate_launch_description() -> LaunchDescription:
                 "config_dir",
                 default_value=default_config_dir,
                 description="Directory containing mullet_core_params_<instance>.yaml files.",
+            ),
+            DeclareLaunchArgument(
+                "px4_namespace_prefix",
+                default_value="",
+                description=(
+                    "Optional PX4 namespace prefix override. "
+                    "Leave empty to use the value from the YAML config."
+                ),
             ),
             OpaqueFunction(function=launch_setup),
         ]

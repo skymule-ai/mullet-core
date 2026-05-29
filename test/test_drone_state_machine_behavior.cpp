@@ -52,24 +52,29 @@ rclcpp::QoS commandQoS()
 class FakePx4Peer
 {
 public:
-  explicit FakePx4Peer(const rclcpp::Node::SharedPtr & node)
+  explicit FakePx4Peer(const rclcpp::Node::SharedPtr & node, const std::string & fmu_prefix = "")
   : node_(node)
   {
+    const auto local_position_topic = fmu_prefix + "/fmu/out/vehicle_local_position";
+    const auto vehicle_status_topic = fmu_prefix + "/fmu/out/vehicle_status_v1";
+    const auto vehicle_command_topic = fmu_prefix + "/fmu/in/vehicle_command";
+    const auto trajectory_topic = fmu_prefix + "/fmu/in/trajectory_setpoint";
+    const auto offboard_mode_topic = fmu_prefix + "/fmu/in/offboard_control_mode";
     local_position_pub_ = node_->create_publisher<VehicleLocalPosition>(
-      "/fmu/out/vehicle_local_position", px4QoS());
+      local_position_topic, px4QoS());
     vehicle_status_pub_ = node_->create_publisher<VehicleStatus>(
-      "/fmu/out/vehicle_status_v1", px4QoS());
+      vehicle_status_topic, px4QoS());
     vehicle_command_sub_ = node_->create_subscription<VehicleCommand>(
-      "/fmu/in/vehicle_command", px4QoS(),
+      vehicle_command_topic, px4QoS(),
       [this](const VehicleCommand::SharedPtr msg) {onVehicleCommand(msg);});
     trajectory_sub_ = node_->create_subscription<px4_msgs::msg::TrajectorySetpoint>(
-      "/fmu/in/trajectory_setpoint", px4QoS(),
+      trajectory_topic, px4QoS(),
       [this](const px4_msgs::msg::TrajectorySetpoint::SharedPtr msg) {
         const std::lock_guard<std::mutex> lock(mutex_);
         trajectory_setpoints_.push_back(*msg);
       });
     offboard_mode_sub_ = node_->create_subscription<px4_msgs::msg::OffboardControlMode>(
-      "/fmu/in/offboard_control_mode", px4QoS(),
+      offboard_mode_topic, px4QoS(),
       [this](const px4_msgs::msg::OffboardControlMode::SharedPtr msg) {
         const std::lock_guard<std::mutex> lock(mutex_);
         offboard_modes_.push_back(*msg);
@@ -343,11 +348,74 @@ protected:
   std::thread spin_thread_;
 };
 
+class DroneStateMachineBehaviorPrefixedTopics : public DroneStateMachineBehavior
+{
+protected:
+  void SetUp() override
+  {
+    executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+    fake_node_ = std::make_shared<rclcpp::Node>("fake_px4_peer_prefixed");
+    client_node_ = std::make_shared<rclcpp::Node>("mullet_core_action_client_prefixed");
+    fake_px4_ = std::make_unique<FakePx4Peer>(fake_node_, "/uav_2");
+
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({
+      rclcpp::Parameter("vehicle_instance", 2),
+      rclcpp::Parameter("px4_namespace_prefix", "uav"),
+      rclcpp::Parameter("control_rate_hz", 50.0),
+      rclcpp::Parameter("offboard_warmup_s", 1.0),
+      rclcpp::Parameter("command_retry_interval_s", 0.1),
+      rclcpp::Parameter("command_timeout_s", 0.25),
+      rclcpp::Parameter("takeoff_altitude_m", 2.0),
+      rclcpp::Parameter("takeoff_acceptance_m", 0.05),
+      rclcpp::Parameter("takeoff_yaw_tolerance_rad", 0.05),
+      rclcpp::Parameter("warmup_timeout_s", 1.2),
+      rclcpp::Parameter("request_offboard_timeout_s", 0.3),
+      rclcpp::Parameter("request_arm_timeout_s", 0.3),
+      rclcpp::Parameter("takeoff_timeout_s", 0.3),
+      rclcpp::Parameter("landing_timeout_s", 0.3),
+      rclcpp::Parameter("hover_altitude_tolerance_m", 0.05),
+      rclcpp::Parameter("hover_vertical_velocity_tolerance_mps", 0.05),
+      rclcpp::Parameter("hover_settle_time_s", 0.0),
+    });
+    state_machine_ = std::make_shared<DroneStateMachine>(options);
+    command_pub_ = client_node_->create_publisher<std_msgs::msg::Float32MultiArray>(
+      "command", commandQoS());
+    takeoff_client_ = rclcpp_action::create_client<Takeoff>(client_node_, "takeoff");
+    land_client_ = rclcpp_action::create_client<Land>(client_node_, "land");
+
+    executor_->add_node(fake_node_);
+    executor_->add_node(client_node_);
+    executor_->add_node(state_machine_);
+    spin_thread_ = std::thread([this]() {executor_->spin();});
+
+    ASSERT_TRUE(takeoff_client_->wait_for_action_server(2s));
+    ASSERT_TRUE(land_client_->wait_for_action_server(2s));
+  }
+};
+
 TEST_F(DroneStateMachineBehavior, TakeoffRejectedBeforePx4TelemetryReady)
 {
   auto handle = sendTakeoffGoal();
 
   EXPECT_EQ(handle, nullptr);
+}
+
+TEST_F(
+  DroneStateMachineBehaviorPrefixedTopics,
+  NonZeroVehicleInstanceUsesConfiguredNamespacePrefixForPx4Topics)
+{
+  auto before_telemetry = sendTakeoffGoal();
+  EXPECT_EQ(before_telemetry, nullptr);
+
+  publishReadyAndWait();
+
+  auto handle = sendTakeoffGoal();
+  ASSERT_NE(handle, nullptr);
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->setModeCount(1.0F, 6.0F) > 0 &&
+           fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
+  }, 3s));
 }
 
 TEST_F(DroneStateMachineBehavior, TakeoffHappyPathEmitsOffboardAndArmThenSucceeds)

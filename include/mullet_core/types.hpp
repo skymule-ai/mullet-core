@@ -2,6 +2,7 @@
 #define MULLET_CORE_TYPES_HPP_
 
 #include <cstdint>
+#include <string>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -56,6 +57,7 @@ struct ExternalCommandBuffer
 struct ControlConfig
 {
   int vehicle_instance{0};
+  std::string px4_namespace_prefix{"px4"};
   double control_rate_hz{50.0};
   double offboard_warmup_s{1.0};
   double command_retry_interval_s{1.0};
