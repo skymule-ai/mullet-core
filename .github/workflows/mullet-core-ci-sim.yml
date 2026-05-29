@@ -9,14 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/skymule-ai/px4-sitl:v1.16.1
+      options: --user root
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build mullet_core
+      - name: Prepare workspace
         run: |
-          cd ws
+          mkdir -p /ws/src
+          cp -a . /ws/src/mullet-core
+
+      - name: Build mullet_core
+        working-directory: /ws
+        run: |
           colcon build --packages-select mullet_core --symlink-install
 
 # TODO: After validating, narrow triggers to pull_request + push on main.
