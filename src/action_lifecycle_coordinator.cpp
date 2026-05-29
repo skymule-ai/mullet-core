@@ -124,6 +124,16 @@ bool ActionLifecycleCoordinator::acceptDisableOffboardGoal(
     active_disable_offboard_goal_, std::move(goal), &disable_offboard_cancel_requested_);
 }
 
+bool ActionLifecycleCoordinator::acceptArmGoal(std::shared_ptr<GoalHandleArm> goal)
+{
+  return acceptGoal(active_arm_goal_, std::move(goal), &arm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::acceptDisarmGoal(std::shared_ptr<GoalHandleDisarm> goal)
+{
+  return acceptGoal(active_disarm_goal_, std::move(goal), &disarm_cancel_requested_);
+}
+
 bool ActionLifecycleCoordinator::hasActiveTakeoffGoal() const
 {
   return hasActiveGoal(active_takeoff_goal_);
@@ -142,6 +152,16 @@ bool ActionLifecycleCoordinator::hasActiveEnableOffboardGoal() const
 bool ActionLifecycleCoordinator::hasActiveDisableOffboardGoal() const
 {
   return hasActiveGoal(active_disable_offboard_goal_);
+}
+
+bool ActionLifecycleCoordinator::hasActiveArmGoal() const
+{
+  return hasActiveGoal(active_arm_goal_);
+}
+
+bool ActionLifecycleCoordinator::hasActiveDisarmGoal() const
+{
+  return hasActiveGoal(active_disarm_goal_);
 }
 
 bool ActionLifecycleCoordinator::isActiveTakeoffGoal(
@@ -166,6 +186,18 @@ bool ActionLifecycleCoordinator::isActiveDisableOffboardGoal(
   const std::shared_ptr<GoalHandleDisableOffboard> & goal) const
 {
   return isActiveGoal(active_disable_offboard_goal_, goal);
+}
+
+bool ActionLifecycleCoordinator::isActiveArmGoal(
+  const std::shared_ptr<GoalHandleArm> & goal) const
+{
+  return isActiveGoal(active_arm_goal_, goal);
+}
+
+bool ActionLifecycleCoordinator::isActiveDisarmGoal(
+  const std::shared_ptr<GoalHandleDisarm> & goal) const
+{
+  return isActiveGoal(active_disarm_goal_, goal);
 }
 
 void ActionLifecycleCoordinator::requestTakeoffCancel()
@@ -198,6 +230,26 @@ bool ActionLifecycleCoordinator::disableOffboardCancelRequested() const
   return disable_offboard_cancel_requested_;
 }
 
+void ActionLifecycleCoordinator::requestArmCancel()
+{
+  arm_cancel_requested_ = true;
+}
+
+bool ActionLifecycleCoordinator::armCancelRequested() const
+{
+  return arm_cancel_requested_;
+}
+
+void ActionLifecycleCoordinator::requestDisarmCancel()
+{
+  disarm_cancel_requested_ = true;
+}
+
+bool ActionLifecycleCoordinator::disarmCancelRequested() const
+{
+  return disarm_cancel_requested_;
+}
+
 void ActionLifecycleCoordinator::publishTakeoffFeedback(
   const std::shared_ptr<Takeoff::Feedback> & feedback) const
 {
@@ -220,6 +272,18 @@ void ActionLifecycleCoordinator::publishDisableOffboardFeedback(
   const std::shared_ptr<DisableOffboard::Feedback> & feedback) const
 {
   publishFeedback<DisableOffboard>(active_disable_offboard_goal_, feedback);
+}
+
+void ActionLifecycleCoordinator::publishArmFeedback(
+  const std::shared_ptr<Arm::Feedback> & feedback) const
+{
+  publishFeedback<Arm>(active_arm_goal_, feedback);
+}
+
+void ActionLifecycleCoordinator::publishDisarmFeedback(
+  const std::shared_ptr<Disarm::Feedback> & feedback) const
+{
+  publishFeedback<Disarm>(active_disarm_goal_, feedback);
 }
 
 bool ActionLifecycleCoordinator::succeedTakeoff(const std::string & message)
@@ -292,6 +356,42 @@ bool ActionLifecycleCoordinator::cancelDisableOffboard(const std::string & messa
     &disable_offboard_cancel_requested_);
 }
 
+bool ActionLifecycleCoordinator::succeedArm(const std::string & message)
+{
+  return finishGoal<Arm>(
+    active_arm_goal_, ActionTerminal::kSucceeded, message, &arm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::abortArm(const std::string & message)
+{
+  return finishGoal<Arm>(
+    active_arm_goal_, ActionTerminal::kAborted, message, &arm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::cancelArm(const std::string & message)
+{
+  return finishGoal<Arm>(
+    active_arm_goal_, ActionTerminal::kCanceled, message, &arm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::succeedDisarm(const std::string & message)
+{
+  return finishGoal<Disarm>(
+    active_disarm_goal_, ActionTerminal::kSucceeded, message, &disarm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::abortDisarm(const std::string & message)
+{
+  return finishGoal<Disarm>(
+    active_disarm_goal_, ActionTerminal::kAborted, message, &disarm_cancel_requested_);
+}
+
+bool ActionLifecycleCoordinator::cancelDisarm(const std::string & message)
+{
+  return finishGoal<Disarm>(
+    active_disarm_goal_, ActionTerminal::kCanceled, message, &disarm_cancel_requested_);
+}
+
 bool ActionLifecycleCoordinator::abortRejectedTakeoff(
   const std::shared_ptr<GoalHandleTakeoff> & goal, const std::string & message) const
 {
@@ -314,6 +414,18 @@ bool ActionLifecycleCoordinator::abortRejectedDisableOffboard(
   const std::shared_ptr<GoalHandleDisableOffboard> & goal, const std::string & message) const
 {
   return abortRejectedGoal<DisableOffboard>(goal, message);
+}
+
+bool ActionLifecycleCoordinator::abortRejectedArm(
+  const std::shared_ptr<GoalHandleArm> & goal, const std::string & message) const
+{
+  return abortRejectedGoal<Arm>(goal, message);
+}
+
+bool ActionLifecycleCoordinator::abortRejectedDisarm(
+  const std::shared_ptr<GoalHandleDisarm> & goal, const std::string & message) const
+{
+  return abortRejectedGoal<Disarm>(goal, message);
 }
 
 }  // namespace mullet_core::state_machine_detail

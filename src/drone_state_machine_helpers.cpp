@@ -42,6 +42,12 @@ bool isActiveTakeoffState(DroneState state)
     case DroneState::kWarmupOffboardHoldSetpoints:
     case DroneState::kRequestOffboardOnly:
     case DroneState::kOffboardHold:
+    case DroneState::kArmRequested:
+    case DroneState::kArmCommand:
+    case DroneState::kArmedOffboardHold:
+    case DroneState::kDisarmCommand:
+    case DroneState::kReleaseOffboardRequest:
+    case DroneState::kDisarmedOffboardReleaseFailed:
     case DroneState::kDisableOffboardRequested:
     case DroneState::kHover:
     case DroneState::kCommand:

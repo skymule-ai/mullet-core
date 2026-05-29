@@ -47,6 +47,12 @@ ENABLE_OFFBOARD_REQUESTED
 WARMUP_OFFBOARD_HOLD_SETPOINTS
 REQUEST_OFFBOARD_ONLY
 OFFBOARD_HOLD
+ARM_REQUESTED
+ARM_COMMAND
+ARMED_OFFBOARD_HOLD
+DISARM_COMMAND
+RELEASE_OFFBOARD_REQUEST
+DISARMED_OFFBOARD_RELEASE_FAILED
 DISABLE_OFFBOARD_REQUESTED
 TAKEOFF_REQUESTED
 WARMUP_SETPOINTS
@@ -66,6 +72,23 @@ DISARMED
 Launch is passive: reaching `READY` means PX4 status and local position are available, but the node will not request Offboard, arm, or take off until an action goal is accepted.
 
 `REQUEST_OFFBOARD` and `REQUEST_ARM` are intentionally separate for clearer real-hardware logs and safer debugging.
+
+## Arm / Disarm Actions
+
+Ground arming is available through `mullet_core/action/Arm`. It requires valid
+PX4 status, local position, and recent `vehicle_land_detected.landed=true`
+telemetry continuously confirmed for `landed_confirmation_s`. From `READY`, the
+node streams the existing safe Offboard proof-of-life pattern before requesting
+Offboard and arm. From disarmed `OFFBOARD_HOLD`, it arms against the existing
+hold target without re-requesting Offboard.
+
+`mullet_core/action/Disarm` direct-disarms only from confirmed landed
+`ARMED_OFFBOARD_HOLD`. Airborne or uncertain requests are rejected; use the
+`Land` action or emergency land topic to land. After ground disarm, the node
+keeps publishing the safe hold setpoint while requesting Position mode. If PX4
+refuses to leave Offboard before
+`request_position_mode_timeout_s`, the state becomes
+`DISARMED_OFFBOARD_RELEASE_FAILED`.
 
 ## EnableOffboard Action
 
@@ -149,6 +172,7 @@ PX4 topics use PX4-compatible QoS: best effort, transient local, keep last depth
 | publish | `/fmu/in/vehicle_command` |
 | subscribe | `/fmu/out/vehicle_local_position` |
 | subscribe | `/fmu/out/vehicle_status_v1` |
+| subscribe | `/fmu/out/vehicle_land_detected` |
 
 PX4 instances must be in `[0, 254]` so `target_system = instance + 1` maps to
 PX4 system IDs `[1, 255]` without wraparound. For PX4 instance `N > 0`, topics
@@ -233,6 +257,10 @@ ros2 action send_goal /px4_1/land mullet_core/action/Land "{}" --feedback
 | `max_takeoff_altitude_m` | float | `10.0` | Maximum acceptable takeoff altitude |
 | `takeoff_yaw_tolerance_rad` | float | `0.174533` | Yaw error threshold for explicit-yaw completion |
 | `hover_settle_time_s` | float | `1.0` | Duration altitude, velocity, and yaw must be settled before completion |
+| `armed_hold_duration_s` | float | `5.0` | Node-owned armed-on-ground hold before requesting disarm; PX4 may disarm earlier |
+| `request_disarm_timeout_s` | float | `5.0` | Timeout while waiting for PX4 to report disarmed after direct ground disarm |
+| `request_position_mode_timeout_s` | float | `5.0` | Timeout while waiting for PX4 to leave Offboard after ground disarm |
+| `landed_confirmation_s` | float | `0.5` | Continuous landed telemetry required for ground arm/direct disarm |
 | `max_vx_ned_mps` | float | `1.0` | External command clamp for NED X velocity |
 | `max_vy_ned_mps` | float | `1.0` | External command clamp for NED Y velocity |
 | `max_vz_ned_mps` | float | `0.5` | External command clamp for NED Z velocity |

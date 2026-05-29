@@ -19,6 +19,10 @@
     request_offboard_timeout_s: 5.0
     disable_offboard_timeout_s: 5.0
     request_arm_timeout_s: 5.0
+    armed_hold_duration_s: 5.0
+    request_disarm_timeout_s: 5.0
+    request_position_mode_timeout_s: 5.0
+    landed_confirmation_s: 0.5
     takeoff_timeout_s: 20.0
     landing_timeout_s: 30.0
     hover_altitude_tolerance_m: 0.25

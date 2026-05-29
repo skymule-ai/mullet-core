@@ -9,7 +9,9 @@
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 
+#include "mullet_core/action/arm.hpp"
 #include "mullet_core/action/disable_offboard.hpp"
+#include "mullet_core/action/disarm.hpp"
 #include "mullet_core/action/enable_offboard.hpp"
 #include "mullet_core/action/land.hpp"
 #include "mullet_core/action/takeoff.hpp"
@@ -33,6 +35,10 @@ public:
 private:
   using DisableOffboard = mullet_core::action::DisableOffboard;
   using GoalHandleDisableOffboard = rclcpp_action::ServerGoalHandle<DisableOffboard>;
+  using Arm = mullet_core::action::Arm;
+  using GoalHandleArm = rclcpp_action::ServerGoalHandle<Arm>;
+  using Disarm = mullet_core::action::Disarm;
+  using GoalHandleDisarm = rclcpp_action::ServerGoalHandle<Disarm>;
   using EnableOffboard = mullet_core::action::EnableOffboard;
   using GoalHandleEnableOffboard = rclcpp_action::ServerGoalHandle<EnableOffboard>;
   using Land = mullet_core::action::Land;
@@ -69,6 +75,16 @@ private:
     const std::shared_ptr<GoalHandleDisableOffboard> goal_handle);
   void handleDisableOffboardAccepted(
     const std::shared_ptr<GoalHandleDisableOffboard> goal_handle);
+  rclcpp_action::GoalResponse handleArmGoal(
+    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Arm::Goal> goal);
+  rclcpp_action::CancelResponse handleArmCancel(
+    const std::shared_ptr<GoalHandleArm> goal_handle);
+  void handleArmAccepted(const std::shared_ptr<GoalHandleArm> goal_handle);
+  rclcpp_action::GoalResponse handleDisarmGoal(
+    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Disarm::Goal> goal);
+  rclcpp_action::CancelResponse handleDisarmCancel(
+    const std::shared_ptr<GoalHandleDisarm> goal_handle);
+  void handleDisarmAccepted(const std::shared_ptr<GoalHandleDisarm> goal_handle);
 
   void transitionTo(DroneState new_state, const char * reason);
   void handleInit(const rclcpp::Time & now);
@@ -77,6 +93,12 @@ private:
   void handleWarmupOffboardHoldSetpoints(const rclcpp::Time & now);
   void handleRequestOffboardOnly(const rclcpp::Time & now);
   void handleOffboardHold(const rclcpp::Time & now);
+  void handleArmRequested(const rclcpp::Time & now);
+  void handleArmCommand(const rclcpp::Time & now);
+  void handleArmedOffboardHold(const rclcpp::Time & now);
+  void handleDisarmCommand(const rclcpp::Time & now);
+  void handleReleaseOffboardRequest(const rclcpp::Time & now);
+  void handleDisarmedOffboardReleaseFailed(const rclcpp::Time & now);
   void handleDisableOffboardRequested(const rclcpp::Time & now);
   void handleTakeoffRequested(const rclcpp::Time & now);
   void handleWarmup(const rclcpp::Time & now);
@@ -98,12 +120,16 @@ private:
   bool haveActiveLandGoal() const;
   bool haveActiveEnableOffboardGoal() const;
   bool haveActiveDisableOffboardGoal() const;
+  bool haveActiveArmGoal() const;
+  bool haveActiveDisarmGoal() const;
   bool activeTakeoffState() const;
   bool landActionAllowedFromState() const;
   bool goalCancelRequested() const;
   bool enableOffboardCancelRequested() const;
   bool disableOffboardCancelRequested() const;
   bool shouldRecoverThroughLanding() const;
+  bool landedConfirmed(const rclcpp::Time & now) const;
+  bool directDisarmAllowed(const rclcpp::Time & now) const;
   bool latchOffboardHoldTarget();
   bool latchTakeoffTarget();
   bool configureTakeoffTarget(const Takeoff::Goal & goal);
@@ -115,6 +141,8 @@ private:
   void publishLandFeedback(const rclcpp::Time & now);
   void publishEnableOffboardFeedback(const rclcpp::Time & now);
   void publishDisableOffboardFeedback(const rclcpp::Time & now);
+  void publishArmFeedback(const rclcpp::Time & now);
+  void publishDisarmFeedback(const rclcpp::Time & now);
   void succeedTakeoffGoal(const char * message);
   void abortTakeoffGoal(const char * message);
   void cancelTakeoffGoal(const char * message);
@@ -127,6 +155,12 @@ private:
   void succeedDisableOffboardGoal(const char * message);
   void abortDisableOffboardGoal(const char * message);
   void cancelDisableOffboardGoal(const char * message);
+  void succeedArmGoal(const char * message);
+  void abortArmGoal(const char * message);
+  void cancelArmGoal(const char * message);
+  void succeedDisarmGoal(const char * message);
+  void abortDisarmGoal(const char * message);
+  void cancelDisarmGoal(const char * message);
   void startLanding(const char * reason);
   void beginLanding(const char * reason, bool request_position_mode);
   void failTakeoffOrLand(const char * reason);
@@ -155,6 +189,9 @@ private:
   bool timing_initialized_{false};
   bool position_mode_requested_for_landing_{false};
   bool landing_timeout_reported_{false};
+  bool arm_started_from_offboard_hold_{false};
+  bool release_offboard_after_disarm_{false};
+  rclcpp::Time armed_hold_deadline_{};
 
   float takeoff_x_ned_m_{0.0F};
   float takeoff_y_ned_m_{0.0F};
@@ -178,6 +215,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr land_sub_;
   rclcpp_action::Server<Takeoff>::SharedPtr takeoff_action_server_;
   rclcpp_action::Server<Land>::SharedPtr land_action_server_;
+  rclcpp_action::Server<Arm>::SharedPtr arm_action_server_;
+  rclcpp_action::Server<Disarm>::SharedPtr disarm_action_server_;
   rclcpp_action::Server<EnableOffboard>::SharedPtr enable_offboard_action_server_;
   rclcpp_action::Server<DisableOffboard>::SharedPtr disable_offboard_action_server_;
   rclcpp::TimerBase::SharedPtr control_timer_;

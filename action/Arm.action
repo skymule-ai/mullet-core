@@ -1,0 +1,8 @@
+---
+bool success
+string message
+---
+string state
+bool armed
+bool offboard
+float32 elapsed_s

@@ -26,6 +26,16 @@ bool DroneStateMachine::haveActiveDisableOffboardGoal() const
   return action_lifecycle_->hasActiveDisableOffboardGoal();
 }
 
+bool DroneStateMachine::haveActiveArmGoal() const
+{
+  return action_lifecycle_->hasActiveArmGoal();
+}
+
+bool DroneStateMachine::haveActiveDisarmGoal() const
+{
+  return action_lifecycle_->hasActiveDisarmGoal();
+}
+
 bool DroneStateMachine::activeTakeoffState() const
 {
   return state_machine_detail::isActiveTakeoffState(state_);
@@ -56,6 +66,18 @@ bool DroneStateMachine::shouldRecoverThroughLanding() const
   return px4_->isArmed() || takeoff_arm_requested_;
 }
 
+bool DroneStateMachine::landedConfirmed(const rclcpp::Time & current_time) const
+{
+  const double max_age_s = std::min(5.0, config_.landed_confirmation_s + 0.5);
+  return px4_->landedContinuouslyFor(
+    current_time, config_.landed_confirmation_s, max_age_s);
+}
+
+bool DroneStateMachine::directDisarmAllowed(const rclcpp::Time & current_time) const
+{
+  return px4_->hasVehicleStatus() && px4_->isArmed() && landedConfirmed(current_time);
+}
+
 const char * DroneStateMachine::stateName(DroneState state)
 {
   switch (state) {
@@ -71,6 +93,18 @@ const char * DroneStateMachine::stateName(DroneState state)
       return "REQUEST_OFFBOARD_ONLY";
     case DroneState::kOffboardHold:
       return "OFFBOARD_HOLD";
+    case DroneState::kArmRequested:
+      return "ARM_REQUESTED";
+    case DroneState::kArmCommand:
+      return "ARM_COMMAND";
+    case DroneState::kArmedOffboardHold:
+      return "ARMED_OFFBOARD_HOLD";
+    case DroneState::kDisarmCommand:
+      return "DISARM_COMMAND";
+    case DroneState::kReleaseOffboardRequest:
+      return "RELEASE_OFFBOARD_REQUEST";
+    case DroneState::kDisarmedOffboardReleaseFailed:
+      return "DISARMED_OFFBOARD_RELEASE_FAILED";
     case DroneState::kDisableOffboardRequested:
       return "DISABLE_OFFBOARD_REQUESTED";
     case DroneState::kTakeoffRequested:

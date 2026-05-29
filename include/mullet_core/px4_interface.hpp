@@ -7,6 +7,7 @@
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
+#include <px4_msgs/msg/vehicle_land_detected.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -25,6 +26,7 @@ public:
     float vx_ned_mps, float vy_ned_mps, float vz_ned_mps, float yaw_rad);
 
   void arm();
+  void disarm();
   void setOffboardMode();
   void setPositionMode();
   void land();
@@ -32,6 +34,10 @@ public:
   bool hasLocalPosition() const;
   bool hasVehicleStatus() const;
   bool localPositionValid() const;
+  bool hasLandDetected() const;
+  bool landDetectedRecent(const rclcpp::Time & now, double max_age_s) const;
+  bool isLanded() const;
+  bool landedContinuouslyFor(const rclcpp::Time & now, double duration_s, double max_age_s) const;
   bool isArmed() const;
   bool isOffboard() const;
   bool isDisarmed() const;
@@ -48,6 +54,7 @@ private:
     float param6 = 0.0F, float param7 = 0.0F);
   void onLocalPosition(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg);
   void onVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
+  void onLandDetected(const px4_msgs::msg::VehicleLandDetected::SharedPtr msg);
 
   rclcpp::Node & node_;
   std::string fmu_prefix_;
@@ -56,14 +63,19 @@ private:
 
   px4_msgs::msg::VehicleLocalPosition latest_local_position_{};
   px4_msgs::msg::VehicleStatus latest_vehicle_status_{};
+  px4_msgs::msg::VehicleLandDetected latest_land_detected_{};
+  rclcpp::Time latest_land_detected_receipt_{};
+  rclcpp::Time landed_since_{};
   bool has_local_position_{false};
   bool has_vehicle_status_{false};
+  bool has_land_detected_{false};
 
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_mode_pub_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr trajectory_setpoint_pub_;
   rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr local_position_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_sub_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleLandDetected>::SharedPtr land_detected_sub_;
 };
 
 }  // namespace mullet_core

@@ -17,6 +17,12 @@ enum class DroneState : std::uint8_t
   kWarmupOffboardHoldSetpoints,
   kRequestOffboardOnly,
   kOffboardHold,
+  kArmRequested,
+  kArmCommand,
+  kArmedOffboardHold,
+  kDisarmCommand,
+  kReleaseOffboardRequest,
+  kDisarmedOffboardReleaseFailed,
   kDisableOffboardRequested,
   kTakeoffRequested,
   kWarmupSetpoints,
@@ -69,6 +75,10 @@ struct ControlConfig
   double request_offboard_timeout_s{5.0};
   double disable_offboard_timeout_s{5.0};
   double request_arm_timeout_s{5.0};
+  double armed_hold_duration_s{5.0};
+  double request_disarm_timeout_s{5.0};
+  double request_position_mode_timeout_s{5.0};
+  double landed_confirmation_s{0.5};
   double takeoff_timeout_s{20.0};
   double landing_timeout_s{30.0};
   double hover_altitude_tolerance_m{0.25};
