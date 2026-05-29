@@ -21,7 +21,8 @@ jobs:
 
       - name: Build mullet_core
         working-directory: /ws
+        shell: bash
         run: |
-          . /opt/ros/humble/setup.bash
+          source /opt/ros/humble/setup.bash
           colcon build --packages-select mullet_core --symlink-install
 # TODO: After validating, narrow triggers to pull_request + push on main.
