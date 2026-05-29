@@ -20,6 +20,10 @@ jobs:
           mkdir -p /ws/src
           cp -a . /ws/src/mullet-core
 
+      - name: Clone px4_msgs
+        run: |
+          git clone -b release/1.17 https://github.com/PX4/px4_msgs.git /ws/src/px4_msgs
+
       - name: Build mullet_core
         working-directory: /ws
         shell: bash
