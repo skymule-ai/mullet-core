@@ -23,6 +23,7 @@ jobs:
       - name: Clone px4_msgs
         run: |
           git clone -b release/1.17 https://github.com/PX4/px4_msgs.git /ws/src/px4_msgs
+          colcon build --packages-select px4_msgs --symlink-install --install-base /ws/install/px4_msgs
 
       - name: Build mullet_core
         working-directory: /ws
