@@ -14,6 +14,7 @@ def _load_launch_module():
 
 
 LAUNCH = _load_launch_module()
+PACKAGE_DIR = Path(__file__).parents[1]
 
 
 def test_explicit_instances_accept_whitespace_and_sort():
@@ -56,3 +57,22 @@ def test_offset_instances_reject_invalid_ranges():
         LAUNCH._parse_offset_instances("1", "-1")
     with pytest.raises(ValueError, match="must be <= 254"):
         LAUNCH._parse_offset_instances("2", "254")
+
+
+def test_configs_include_disable_offboard_timeout():
+    for config_name in ("mullet_core_params_default.yaml", "mullet_core_params_1.yaml"):
+        config_text = (PACKAGE_DIR / "config" / config_name).read_text()
+
+        assert "disable_offboard_timeout_s: 5.0" in config_text
+
+
+def test_default_config_omits_deprecated_compatibility_parameters():
+    config_text = (PACKAGE_DIR / "config" / "mullet_core_params_default.yaml").read_text()
+    config_keys = {
+        line.split(":", 1)[0].strip()
+        for line in config_text.splitlines()
+        if ":" in line and not line.lstrip().startswith("#")
+    }
+
+    assert "takeoff_altitude_m" not in config_keys
+    assert "hover_acceptance_radius_m" not in config_keys

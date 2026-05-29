@@ -13,6 +13,8 @@ find_package(px4_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/DisableOffboard.action"
+  "action/EnableOffboard.action"
   "action/Land.action"
   "action/Takeoff.action"
 )
@@ -72,23 +74,24 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
 
+  function(mullet_core_configure_gtest target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_17)
+    target_include_directories(${target_name} PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    )
+  endfunction()
+
   ament_add_gtest(test_vehicle_instance
     test/test_vehicle_instance.cpp
   )
-  target_compile_features(test_vehicle_instance PUBLIC cxx_std_17)
-  target_include_directories(test_vehicle_instance PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  )
+  mullet_core_configure_gtest(test_vehicle_instance)
 
   ament_add_gtest(test_state_machine_helpers
     test/test_state_machine_helpers.cpp
     src/drone_state_machine_helpers.cpp
   )
-  target_compile_features(test_state_machine_helpers PUBLIC cxx_std_17)
-  target_include_directories(test_state_machine_helpers PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
+  mullet_core_configure_gtest(test_state_machine_helpers)
   ament_target_dependencies(test_state_machine_helpers
     rclcpp
   )
@@ -97,11 +100,7 @@ if(BUILD_TESTING)
     test/test_drone_state_machine_behavior.cpp
     ${MULLET_CORE_NODE_SOURCES}
   )
-  target_compile_features(test_drone_state_machine_behavior PUBLIC cxx_std_17)
-  target_include_directories(test_drone_state_machine_behavior PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
+  mullet_core_configure_gtest(test_drone_state_machine_behavior)
   ament_target_dependencies(test_drone_state_machine_behavior
     rclcpp
     rclcpp_action

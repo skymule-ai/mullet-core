@@ -19,6 +19,11 @@ const std::vector<DroneState> & allStates()
   static const std::vector<DroneState> states{
     DroneState::kInit,
     DroneState::kReady,
+    DroneState::kEnableOffboardRequested,
+    DroneState::kWarmupOffboardHoldSetpoints,
+    DroneState::kRequestOffboardOnly,
+    DroneState::kOffboardHold,
+    DroneState::kDisableOffboardRequested,
     DroneState::kTakeoffRequested,
     DroneState::kWarmupSetpoints,
     DroneState::kRequestOffboard,

@@ -17,13 +17,14 @@ bool finiteInRange(double value, double min_value, double max_value)
 
 float wrapPi(float angle_rad)
 {
-  constexpr float kPi = 3.14159265358979323846F;
-  constexpr float kTwoPi = 2.0F * kPi;
-  auto wrapped = static_cast<float>(std::remainder(angle_rad, kTwoPi));
-  if (wrapped <= -kPi) {
-    wrapped += kTwoPi;
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kTwoPi = 2.0 * kPi;
+  constexpr double kBoundaryTolerance = 1e-6;
+  const auto wrapped = std::remainder(static_cast<double>(angle_rad), kTwoPi);
+  if (wrapped <= -kPi || std::fabs(wrapped + kPi) <= kBoundaryTolerance) {
+    return static_cast<float>(kPi);
   }
-  return wrapped;
+  return static_cast<float>(wrapped);
 }
 
 bool isActiveTakeoffState(DroneState state)
@@ -37,6 +38,11 @@ bool isActiveTakeoffState(DroneState state)
       return true;
     case DroneState::kInit:
     case DroneState::kReady:
+    case DroneState::kEnableOffboardRequested:
+    case DroneState::kWarmupOffboardHoldSetpoints:
+    case DroneState::kRequestOffboardOnly:
+    case DroneState::kOffboardHold:
+    case DroneState::kDisableOffboardRequested:
     case DroneState::kHover:
     case DroneState::kCommand:
     case DroneState::kCancelingToLand:

@@ -18,6 +18,7 @@
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 
 namespace mullet_core
@@ -27,6 +28,8 @@ namespace
 
 using namespace std::chrono_literals;
 
+using DisableOffboard = mullet_core::action::DisableOffboard;
+using EnableOffboard = mullet_core::action::EnableOffboard;
 using Land = mullet_core::action::Land;
 using Takeoff = mullet_core::action::Takeoff;
 using VehicleCommand = px4_msgs::msg::VehicleCommand;
@@ -72,6 +75,11 @@ public:
       [this](const px4_msgs::msg::TrajectorySetpoint::SharedPtr msg) {
         const std::lock_guard<std::mutex> lock(mutex_);
         trajectory_setpoints_.push_back(*msg);
+        if (std::isfinite(msg->position[0]) && std::isfinite(msg->position[1]) &&
+          std::isfinite(msg->position[2]))
+        {
+          events_.push_back(Event{EventType::kPositionSetpoint, msg->position[2]});
+        }
       });
     offboard_mode_sub_ = node_->create_subscription<px4_msgs::msg::OffboardControlMode>(
       offboard_mode_topic, px4QoS(),
@@ -83,10 +91,43 @@ public:
 
   void publishReadyTelemetry(float z_ned_m = 0.0F, float heading_rad = 0.0F)
   {
-    armed_ = false;
-    offboard_ = false;
-    publishStatus();
+    bool armed_snapshot = false;
+    bool offboard_snapshot = false;
+    {
+      const std::lock_guard<std::mutex> lock(mutex_);
+      armed_ = false;
+      offboard_ = false;
+      armed_snapshot = armed_;
+      offboard_snapshot = offboard_;
+    }
+    publishStatusFromSnapshot(armed_snapshot, offboard_snapshot);
     publishLocalPosition(z_ned_m, heading_rad, 0.0F);
+  }
+
+  void setArmed(bool armed)
+  {
+    bool armed_snapshot = false;
+    bool offboard_snapshot = false;
+    {
+      const std::lock_guard<std::mutex> lock(mutex_);
+      armed_ = armed;
+      armed_snapshot = armed_;
+      offboard_snapshot = offboard_;
+    }
+    publishStatusFromSnapshot(armed_snapshot, offboard_snapshot);
+  }
+
+  void setOffboard(bool offboard)
+  {
+    bool armed_snapshot = false;
+    bool offboard_snapshot = false;
+    {
+      const std::lock_guard<std::mutex> lock(mutex_);
+      offboard_ = offboard;
+      armed_snapshot = armed_;
+      offboard_snapshot = offboard_;
+    }
+    publishStatusFromSnapshot(armed_snapshot, offboard_snapshot);
   }
 
   void publishLocalPosition(float z_ned_m, float heading_rad, float vz_ned_mps)
@@ -103,18 +144,31 @@ public:
     local_position_pub_->publish(msg);
   }
 
+  void publishInvalidLocalPosition()
+  {
+    VehicleLocalPosition msg{};
+    msg.xy_valid = false;
+    msg.z_valid = false;
+    msg.v_z_valid = false;
+    msg.heading = 0.0F;
+    local_position_pub_->publish(msg);
+  }
+
   void publishStatus()
   {
-    VehicleStatus msg{};
-    msg.arming_state = armed_ ? VehicleStatus::ARMING_STATE_ARMED :
-      VehicleStatus::ARMING_STATE_DISARMED;
-    msg.nav_state = offboard_ ? VehicleStatus::NAVIGATION_STATE_OFFBOARD :
-      VehicleStatus::NAVIGATION_STATE_POSCTL;
-    vehicle_status_pub_->publish(msg);
+    bool armed_snapshot = false;
+    bool offboard_snapshot = false;
+    {
+      const std::lock_guard<std::mutex> lock(mutex_);
+      armed_snapshot = armed_;
+      offboard_snapshot = offboard_;
+    }
+    publishStatusFromSnapshot(armed_snapshot, offboard_snapshot);
   }
 
   void setAutoArm(bool enabled) {auto_arm_.store(enabled);}
   void setAutoOffboard(bool enabled) {auto_offboard_.store(enabled);}
+  void setAutoPositionMode(bool enabled) {auto_position_mode_.store(enabled);}
   void setAutoDisarmOnLand(bool enabled) {auto_disarm_on_land_.store(enabled);}
 
   std::size_t commandCount(std::uint16_t command) const
@@ -147,30 +201,106 @@ public:
       }));
   }
 
+  std::size_t positionSetpointCountAtZ(float z_ned_m) const
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return static_cast<std::size_t>(
+      std::count_if(trajectory_setpoints_.begin(), trajectory_setpoints_.end(),
+      [z_ned_m](const px4_msgs::msg::TrajectorySetpoint & msg) {
+        return std::isfinite(msg.position[0]) &&
+               std::isfinite(msg.position[1]) &&
+               std::isfinite(msg.position[2]) &&
+               std::fabs(msg.position[2] - z_ned_m) < 1e-3F;
+      }));
+  }
+
+  bool positionSetpointBeforeFirstArm(float z_ned_m) const
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    bool saw_setpoint = false;
+    for (const auto & event : events_) {
+      if (event.type == EventType::kPositionSetpoint &&
+        std::fabs(event.z_ned_m - z_ned_m) < 1e-3F)
+      {
+        saw_setpoint = true;
+      }
+      if (event.type == EventType::kArmCommand) {
+        return saw_setpoint;
+      }
+    }
+    return false;
+  }
+
 private:
+  enum class EventType
+  {
+    kPositionSetpoint,
+    kArmCommand,
+  };
+
+  struct Event
+  {
+    EventType type;
+    float z_ned_m;
+  };
+
   void onVehicleCommand(const VehicleCommand::SharedPtr msg)
   {
+    bool should_publish_status = false;
+    bool armed_snapshot = false;
+    bool offboard_snapshot = false;
     {
       const std::lock_guard<std::mutex> lock(mutex_);
       vehicle_commands_.push_back(*msg);
+      if (msg->command == VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM &&
+        msg->param1 > 0.5F)
+      {
+        events_.push_back(Event{EventType::kArmCommand, 0.0F});
+      }
+
+      if (msg->command == VehicleCommand::VEHICLE_CMD_DO_SET_MODE &&
+        std::fabs(msg->param2 - 6.0F) < 1e-3F && auto_offboard_.load())
+      {
+        offboard_ = true;
+        should_publish_status = true;
+      }
+      if (msg->command == VehicleCommand::VEHICLE_CMD_DO_SET_MODE &&
+        std::fabs(msg->param1 - 1.0F) < 1e-3F &&
+        std::fabs(msg->param2 - 3.0F) < 1e-3F && auto_position_mode_.load())
+      {
+        offboard_ = false;
+        should_publish_status = true;
+      }
+      if (msg->command == VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM &&
+        msg->param1 > 0.5F && auto_arm_.load())
+      {
+        armed_ = true;
+        should_publish_status = true;
+      }
+      if (msg->command == VehicleCommand::VEHICLE_CMD_NAV_LAND && auto_disarm_on_land_.load()) {
+        armed_ = false;
+        offboard_ = false;
+        should_publish_status = true;
+      }
+
+      if (should_publish_status) {
+        armed_snapshot = armed_;
+        offboard_snapshot = offboard_;
+      }
     }
-    if (msg->command == VehicleCommand::VEHICLE_CMD_DO_SET_MODE &&
-      std::fabs(msg->param2 - 6.0F) < 1e-3F && auto_offboard_.load())
-    {
-      offboard_ = true;
-      publishStatus();
+    if (should_publish_status) {
+      publishStatusFromSnapshot(armed_snapshot, offboard_snapshot);
     }
-    if (msg->command == VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM &&
-      msg->param1 > 0.5F && auto_arm_.load())
-    {
-      armed_ = true;
-      publishStatus();
-    }
-    if (msg->command == VehicleCommand::VEHICLE_CMD_NAV_LAND && auto_disarm_on_land_.load()) {
-      armed_ = false;
-      offboard_ = false;
-      publishStatus();
-    }
+  }
+
+  void publishStatusFromSnapshot(bool armed, bool offboard)
+  {
+    VehicleStatus msg{};
+    msg.arming_state = armed ? VehicleStatus::ARMING_STATE_ARMED :
+      VehicleStatus::ARMING_STATE_DISARMED;
+    msg.nav_state = offboard ? VehicleStatus::NAVIGATION_STATE_OFFBOARD :
+      VehicleStatus::NAVIGATION_STATE_POSCTL;
+    vehicle_status_pub_->publish(msg);
   }
 
   rclcpp::Node::SharedPtr node_;
@@ -178,11 +308,13 @@ private:
   bool offboard_{false};
   std::atomic_bool auto_arm_{true};
   std::atomic_bool auto_offboard_{true};
+  std::atomic_bool auto_position_mode_{true};
   std::atomic_bool auto_disarm_on_land_{false};
   mutable std::mutex mutex_{};
   std::vector<VehicleCommand> vehicle_commands_{};
   std::vector<px4_msgs::msg::TrajectorySetpoint> trajectory_setpoints_{};
   std::vector<px4_msgs::msg::OffboardControlMode> offboard_modes_{};
+  std::vector<Event> events_{};
   rclcpp::Publisher<VehicleLocalPosition>::SharedPtr local_position_pub_;
   rclcpp::Publisher<VehicleStatus>::SharedPtr vehicle_status_pub_;
   rclcpp::Subscription<VehicleCommand>::SharedPtr vehicle_command_sub_;
@@ -225,6 +357,7 @@ protected:
       rclcpp::Parameter("takeoff_yaw_tolerance_rad", 0.05),
       rclcpp::Parameter("warmup_timeout_s", 1.2),
       rclcpp::Parameter("request_offboard_timeout_s", 0.3),
+      rclcpp::Parameter("disable_offboard_timeout_s", 0.3),
       rclcpp::Parameter("request_arm_timeout_s", 0.3),
       rclcpp::Parameter("takeoff_timeout_s", 0.3),
       rclcpp::Parameter("landing_timeout_s", 0.3),
@@ -235,8 +368,14 @@ protected:
     state_machine_ = std::make_shared<DroneStateMachine>(options);
     command_pub_ = client_node_->create_publisher<std_msgs::msg::Float32MultiArray>(
       "command", commandQoS());
+    land_request_pub_ = client_node_->create_publisher<std_msgs::msg::Empty>(
+      "land_request", rclcpp::QoS(1));
     takeoff_client_ = rclcpp_action::create_client<Takeoff>(client_node_, "takeoff");
     land_client_ = rclcpp_action::create_client<Land>(client_node_, "land");
+    enable_offboard_client_ = rclcpp_action::create_client<EnableOffboard>(
+      client_node_, "enable_offboard");
+    disable_offboard_client_ = rclcpp_action::create_client<DisableOffboard>(
+      client_node_, "disable_offboard");
 
     executor_->add_node(fake_node_);
     executor_->add_node(client_node_);
@@ -245,6 +384,8 @@ protected:
 
     ASSERT_TRUE(takeoff_client_->wait_for_action_server(2s));
     ASSERT_TRUE(land_client_->wait_for_action_server(2s));
+    ASSERT_TRUE(enable_offboard_client_->wait_for_action_server(2s));
+    ASSERT_TRUE(disable_offboard_client_->wait_for_action_server(2s));
   }
 
   void TearDown() override
@@ -255,7 +396,10 @@ protected:
     }
     takeoff_client_.reset();
     land_client_.reset();
+    enable_offboard_client_.reset();
+    disable_offboard_client_.reset();
     command_pub_.reset();
+    land_request_pub_.reset();
     state_machine_.reset();
     fake_px4_.reset();
     fake_node_.reset();
@@ -308,6 +452,26 @@ protected:
     return future.get();
   }
 
+  std::shared_ptr<rclcpp_action::ClientGoalHandle<EnableOffboard>> sendEnableOffboardGoal()
+  {
+    EnableOffboard::Goal goal{};
+    auto future = enable_offboard_client_->async_send_goal(goal);
+    if (future.wait_for(2s) != std::future_status::ready) {
+      return nullptr;
+    }
+    return future.get();
+  }
+
+  std::shared_ptr<rclcpp_action::ClientGoalHandle<DisableOffboard>> sendDisableOffboardGoal()
+  {
+    DisableOffboard::Goal goal{};
+    auto future = disable_offboard_client_->async_send_goal(goal);
+    if (future.wait_for(2s) != std::future_status::ready) {
+      return nullptr;
+    }
+    return future.get();
+  }
+
   rclcpp_action::ClientGoalHandle<Takeoff>::WrappedResult waitTakeoffResult(
     const std::shared_ptr<rclcpp_action::ClientGoalHandle<Takeoff>> & handle)
   {
@@ -320,6 +484,22 @@ protected:
     const std::shared_ptr<rclcpp_action::ClientGoalHandle<Land>> & handle)
   {
     auto future = land_client_->async_get_result(handle);
+    EXPECT_EQ(future.wait_for(4s), std::future_status::ready);
+    return future.get();
+  }
+
+  rclcpp_action::ClientGoalHandle<EnableOffboard>::WrappedResult waitEnableOffboardResult(
+    const std::shared_ptr<rclcpp_action::ClientGoalHandle<EnableOffboard>> & handle)
+  {
+    auto future = enable_offboard_client_->async_get_result(handle);
+    EXPECT_EQ(future.wait_for(4s), std::future_status::ready);
+    return future.get();
+  }
+
+  rclcpp_action::ClientGoalHandle<DisableOffboard>::WrappedResult waitDisableOffboardResult(
+    const std::shared_ptr<rclcpp_action::ClientGoalHandle<DisableOffboard>> & handle)
+  {
+    auto future = disable_offboard_client_->async_get_result(handle);
     EXPECT_EQ(future.wait_for(4s), std::future_status::ready);
     return future.get();
   }
@@ -337,6 +517,12 @@ protected:
     ASSERT_EQ(result.result->message, "Takeoff complete");
   }
 
+  void publishLandRequest()
+  {
+    std_msgs::msg::Empty msg{};
+    land_request_pub_->publish(msg);
+  }
+
   std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
   rclcpp::Node::SharedPtr fake_node_;
   rclcpp::Node::SharedPtr client_node_;
@@ -344,7 +530,10 @@ protected:
   std::unique_ptr<FakePx4Peer> fake_px4_;
   rclcpp_action::Client<Takeoff>::SharedPtr takeoff_client_;
   rclcpp_action::Client<Land>::SharedPtr land_client_;
+  rclcpp_action::Client<EnableOffboard>::SharedPtr enable_offboard_client_;
+  rclcpp_action::Client<DisableOffboard>::SharedPtr disable_offboard_client_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr land_request_pub_;
   std::thread spin_thread_;
 };
 
@@ -416,6 +605,384 @@ TEST_F(
     return fake_px4_->setModeCount(1.0F, 6.0F) > 0 &&
            fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
   }, 3s));
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardRejectedBeforePx4TelemetryReady)
+{
+  auto handle = sendEnableOffboardGoal();
+
+  EXPECT_EQ(handle, nullptr);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardRejectedBeforePx4TelemetryReady)
+{
+  auto handle = sendDisableOffboardGoal();
+
+  EXPECT_EQ(handle, nullptr);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardRejectsOutsideOffboardHold)
+{
+  publishReadyAndWait();
+
+  EXPECT_EQ(sendDisableOffboardGoal(), nullptr);
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  EXPECT_EQ(sendDisableOffboardGoal(), nullptr);
+
+  auto cancel_future = takeoff_client_->async_cancel_goal(takeoff);
+  ASSERT_EQ(cancel_future.wait_for(2s), std::future_status::ready);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  EXPECT_EQ(takeoff_result.code, rclcpp_action::ResultCode::CANCELED);
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardRejectsWhenAlreadyOffboardOrArmed)
+{
+  publishReadyAndWait();
+  fake_px4_->setOffboard(true);
+  std::this_thread::sleep_for(100ms);
+  EXPECT_EQ(sendEnableOffboardGoal(), nullptr);
+
+  fake_px4_->setOffboard(false);
+  fake_px4_->setArmed(true);
+  std::this_thread::sleep_for(100ms);
+  EXPECT_EQ(sendEnableOffboardGoal(), nullptr);
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardHappyPathEntersHoldWithoutArmOrLand)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  ASSERT_TRUE(result.result->success);
+  EXPECT_EQ(result.result->message, "Offboard enabled");
+  EXPECT_GT(fake_px4_->setModeCount(1.0F, 6.0F), 0U);
+  EXPECT_GT(fake_px4_->positionSetpointCountAtZ(0.0F), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardTimeoutAbortsWithoutLandingRecovery)
+{
+  publishReadyAndWait();
+  fake_px4_->setAutoOffboard(false);
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_FALSE(result.result->success);
+  EXPECT_EQ(result.result->message, "enable_offboard request timed out");
+  EXPECT_GT(fake_px4_->setModeCount(1.0F, 6.0F), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardCancelReturnsReadyWithoutArmOrLand)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto cancel_future = enable_offboard_client_->async_cancel_goal(handle);
+  ASSERT_EQ(cancel_future.wait_for(2s), std::future_status::ready);
+  auto result = waitEnableOffboardResult(handle);
+
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::CANCELED);
+  ASSERT_FALSE(result.result->success);
+  EXPECT_EQ(result.result->message, "EnableOffboard canceled before completion");
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+  auto second = sendEnableOffboardGoal();
+  ASSERT_NE(second, nullptr);
+  auto second_cancel_future = enable_offboard_client_->async_cancel_goal(second);
+  ASSERT_EQ(second_cancel_future.wait_for(2s), std::future_status::ready);
+  auto second_result = waitEnableOffboardResult(second);
+  EXPECT_EQ(second_result.code, rclcpp_action::ResultCode::CANCELED);
+}
+
+TEST_F(DroneStateMachineBehavior, LandRequestPreemptsActiveEnableOffboardWithoutLanding)
+{
+  publishReadyAndWait();
+  fake_px4_->setAutoOffboard(false);
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  ASSERT_TRUE(waitFor([this]() {return fake_px4_->setModeCount(1.0F, 6.0F) > 0;}));
+  publishLandRequest();
+
+  auto result = waitEnableOffboardResult(handle);
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_FALSE(result.result->success);
+  EXPECT_EQ(result.result->message, "EnableOffboard preempted by emergency land request");
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+
+  auto second = sendEnableOffboardGoal();
+  ASSERT_NE(second, nullptr);
+  auto cancel_future = enable_offboard_client_->async_cancel_goal(second);
+  ASSERT_EQ(cancel_future.wait_for(2s), std::future_status::ready);
+  auto second_result = waitEnableOffboardResult(second);
+  EXPECT_EQ(second_result.code, rclcpp_action::ResultCode::CANCELED);
+}
+
+TEST_F(DroneStateMachineBehavior, LandRequestDuringEnableOffboardPreservesAcceptedOffboardHold)
+{
+  publishReadyAndWait();
+  fake_px4_->setAutoOffboard(false);
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  ASSERT_TRUE(waitFor([this]() {return fake_px4_->setModeCount(1.0F, 6.0F) > 0;}));
+
+  fake_px4_->setOffboard(true);
+  publishLandRequest();
+
+  auto result = waitEnableOffboardResult(handle);
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_FALSE(result.result->success);
+  EXPECT_EQ(result.result->message, "EnableOffboard preempted by emergency land request");
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  ASSERT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
+  }, 2s));
+  fake_px4_->publishLocalPosition(-2.0F, 0.0F, 0.0F);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  EXPECT_EQ(takeoff_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+}
+
+TEST_F(DroneStateMachineBehavior, EnableOffboardRejectsOutsideReady)
+{
+  publishReadyAndWait();
+  fake_px4_->setAutoOffboard(false);
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  EXPECT_EQ(sendEnableOffboardGoal(), nullptr);
+
+  auto cancel_future = takeoff_client_->async_cancel_goal(takeoff);
+  ASSERT_EQ(cancel_future.wait_for(2s), std::future_status::ready);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  ASSERT_EQ(takeoff_result.code, rclcpp_action::ResultCode::CANCELED);
+
+  fake_px4_->setAutoOffboard(true);
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  EXPECT_EQ(sendEnableOffboardGoal(), nullptr);
+}
+
+TEST_F(DroneStateMachineBehavior, OffboardHoldDoesNotReissueOffboardModeAfterSuccess)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+  ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  const auto offboard_request_count = fake_px4_->setModeCount(1.0F, 6.0F);
+  std::this_thread::sleep_for(350ms);
+  EXPECT_EQ(fake_px4_->setModeCount(1.0F, 6.0F), offboard_request_count);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardHappyPathRequestsPositionMode)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  auto disable = sendDisableOffboardGoal();
+  ASSERT_NE(disable, nullptr);
+  auto disable_result = waitDisableOffboardResult(disable);
+
+  EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  ASSERT_TRUE(disable_result.result->success);
+  EXPECT_EQ(disable_result.result->message, "Offboard disabled");
+  EXPECT_GT(fake_px4_->setModeCount(1.0F, 3.0F), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardTimeoutReturnsToUsableOffboardHold)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  fake_px4_->setAutoPositionMode(false);
+  auto disable = sendDisableOffboardGoal();
+  ASSERT_NE(disable, nullptr);
+  auto disable_result = waitDisableOffboardResult(disable);
+
+  EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_FALSE(disable_result.result->success);
+  EXPECT_EQ(disable_result.result->message, "disable_offboard request timed out");
+  EXPECT_GT(fake_px4_->setModeCount(1.0F, 3.0F), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  ASSERT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
+  }, 2s));
+  fake_px4_->publishLocalPosition(-2.0F, 0.0F, 0.0F);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  EXPECT_EQ(takeoff_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardCancelReturnsToUsableOffboardHold)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  fake_px4_->setAutoPositionMode(false);
+  auto disable = sendDisableOffboardGoal();
+  ASSERT_NE(disable, nullptr);
+  ASSERT_TRUE(waitFor([this]() {return fake_px4_->setModeCount(1.0F, 3.0F) > 0;}));
+  auto cancel_future = disable_offboard_client_->async_cancel_goal(disable);
+  ASSERT_EQ(cancel_future.wait_for(2s), std::future_status::ready);
+  auto disable_result = waitDisableOffboardResult(disable);
+
+  EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::CANCELED);
+  ASSERT_FALSE(disable_result.result->success);
+  EXPECT_EQ(disable_result.result->message, "DisableOffboard canceled before completion");
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  ASSERT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
+  }, 2s));
+  fake_px4_->publishLocalPosition(-2.0F, 0.0F, 0.0F);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  EXPECT_EQ(takeoff_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+}
+
+TEST_F(DroneStateMachineBehavior, DisableOffboardUnexpectedArmStartsLandingRecovery)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  fake_px4_->setAutoPositionMode(false);
+  auto disable = sendDisableOffboardGoal();
+  ASSERT_NE(disable, nullptr);
+  ASSERT_TRUE(waitFor([this]() {return fake_px4_->setModeCount(1.0F, 3.0F) > 0;}));
+  fake_px4_->setArmed(true);
+
+  auto disable_result = waitDisableOffboardResult(disable);
+  EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_FALSE(disable_result.result->success);
+  EXPECT_EQ(disable_result.result->message, "disable_offboard aborted: vehicle armed unexpectedly");
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND) > 0;
+  }, 2s));
+}
+
+TEST_F(DroneStateMachineBehavior, OffboardHoldExitsIfPx4LeavesOffboard)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+  ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  const auto offboard_request_count = fake_px4_->setModeCount(1.0F, 6.0F);
+  fake_px4_->setOffboard(false);
+  ASSERT_TRUE(waitFor([this, offboard_request_count]() {
+    return fake_px4_->setModeCount(1.0F, 6.0F) == offboard_request_count;
+  }, 500ms));
+  std::this_thread::sleep_for(250ms);
+  EXPECT_EQ(fake_px4_->setModeCount(1.0F, 6.0F), offboard_request_count);
+}
+
+TEST_F(DroneStateMachineBehavior, OffboardHoldInvalidLocalPositionReturnsToInit)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+  ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  fake_px4_->publishInvalidLocalPosition();
+  ASSERT_TRUE(waitFor([this]() {
+    return sendTakeoffGoal() == nullptr;
+  }, 500ms));
+}
+
+TEST_F(DroneStateMachineBehavior, OffboardHoldUnexpectedArmStartsLandingRecovery)
+{
+  publishReadyAndWait();
+
+  auto handle = sendEnableOffboardGoal();
+  ASSERT_NE(handle, nullptr);
+  auto result = waitEnableOffboardResult(handle);
+  ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  fake_px4_->setArmed(true);
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND) > 0;
+  }, 2s));
+}
+
+TEST_F(DroneStateMachineBehavior, LandFromDisarmedOffboardHoldIsRejected)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  EXPECT_EQ(sendLandGoal(), nullptr);
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+}
+
+TEST_F(DroneStateMachineBehavior, TakeoffFromOffboardHoldPublishesTakeoffSetpointBeforeArm)
+{
+  publishReadyAndWait();
+
+  auto enable = sendEnableOffboardGoal();
+  ASSERT_NE(enable, nullptr);
+  auto enable_result = waitEnableOffboardResult(enable);
+  ASSERT_EQ(enable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  auto takeoff = sendTakeoffGoal();
+  ASSERT_NE(takeoff, nullptr);
+  ASSERT_TRUE(waitFor([this]() {
+    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
+  }, 2s));
+  EXPECT_TRUE(fake_px4_->positionSetpointBeforeFirstArm(-2.0F));
+  fake_px4_->publishLocalPosition(-2.0F, 0.0F, 0.0F);
+  auto takeoff_result = waitTakeoffResult(takeoff);
+  EXPECT_EQ(takeoff_result.code, rclcpp_action::ResultCode::SUCCEEDED);
 }
 
 TEST_F(DroneStateMachineBehavior, TakeoffHappyPathEmitsOffboardAndArmThenSucceeds)

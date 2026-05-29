@@ -9,12 +9,23 @@ namespace mullet_core
 
 namespace
 {
+constexpr float kPx4CustomMainMode = 1.0F;
+constexpr float kPx4OffboardMode = 6.0F;
+constexpr float kPx4PositionMode = 3.0F;
+constexpr float kArmParam = 1.0F;
+
 rclcpp::QoS px4QoS()
 {
   auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
   qos.best_effort();
   qos.transient_local();
   return qos;
+}
+
+std::array<float, 3> nanVector()
+{
+  const auto nan = std::numeric_limits<float>::quiet_NaN();
+  return {nan, nan, nan};
 }
 }  // namespace
 
@@ -55,18 +66,9 @@ void Px4Interface::publishPositionSetpoint(
 {
   px4_msgs::msg::TrajectorySetpoint msg{};
   msg.position = {x_ned_m, y_ned_m, z_ned_m};
-  msg.velocity = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
-  msg.acceleration = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
-  msg.jerk = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
+  msg.velocity = nanVector();
+  msg.acceleration = nanVector();
+  msg.jerk = nanVector();
   msg.yaw = yaw_rad;
   msg.yawspeed = 0.0F;
   msg.timestamp = nowUs();
@@ -77,19 +79,10 @@ void Px4Interface::publishVelocitySetpoint(
   float vx_ned_mps, float vy_ned_mps, float vz_ned_mps, float yaw_rad)
 {
   px4_msgs::msg::TrajectorySetpoint msg{};
-  msg.position = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
+  msg.position = nanVector();
   msg.velocity = {vx_ned_mps, vy_ned_mps, vz_ned_mps};
-  msg.acceleration = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
-  msg.jerk = {
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN(),
-    std::numeric_limits<float>::quiet_NaN()};
+  msg.acceleration = nanVector();
+  msg.jerk = nanVector();
   msg.yaw = yaw_rad;
   msg.yawspeed = 0.0F;
   msg.timestamp = nowUs();
@@ -98,17 +91,21 @@ void Px4Interface::publishVelocitySetpoint(
 
 void Px4Interface::arm()
 {
-  publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0F);
+  publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, kArmParam);
 }
 
 void Px4Interface::setOffboardMode()
 {
-  publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 6.0F);
+  publishVehicleCommand(
+    px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, kPx4CustomMainMode,
+    kPx4OffboardMode);
 }
 
 void Px4Interface::setPositionMode()
 {
-  publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 3.0F);
+  publishVehicleCommand(
+    px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, kPx4CustomMainMode,
+    kPx4PositionMode);
 }
 
 void Px4Interface::land()

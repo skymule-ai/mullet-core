@@ -1,0 +1,7 @@
+---
+bool success
+string message
+---
+string state
+bool offboard
+float32 elapsed_s
