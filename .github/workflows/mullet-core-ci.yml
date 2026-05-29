@@ -1,0 +1,22 @@
+name: Mullet Core CI (Base Image)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ghcr.io/skymule-ai/mullet-ros2-base:main
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build mullet_core
+        run: |
+          cd ws
+          colcon build --packages-select mullet_core --symlink-install
+
+# TODO: After validating, narrow triggers to pull_request + push on main.
