@@ -6,7 +6,9 @@
 
 #include <rclcpp_action/rclcpp_action.hpp>
 
+#include "mullet_core/action/arm.hpp"
 #include "mullet_core/action/disable_offboard.hpp"
+#include "mullet_core/action/disarm.hpp"
 #include "mullet_core/action/enable_offboard.hpp"
 #include "mullet_core/action/land.hpp"
 #include "mullet_core/action/takeoff.hpp"
@@ -19,6 +21,10 @@ class ActionLifecycleCoordinator
 public:
   using DisableOffboard = mullet_core::action::DisableOffboard;
   using GoalHandleDisableOffboard = rclcpp_action::ServerGoalHandle<DisableOffboard>;
+  using Arm = mullet_core::action::Arm;
+  using GoalHandleArm = rclcpp_action::ServerGoalHandle<Arm>;
+  using Disarm = mullet_core::action::Disarm;
+  using GoalHandleDisarm = rclcpp_action::ServerGoalHandle<Disarm>;
   using EnableOffboard = mullet_core::action::EnableOffboard;
   using GoalHandleEnableOffboard = rclcpp_action::ServerGoalHandle<EnableOffboard>;
   using Land = mullet_core::action::Land;
@@ -30,17 +36,23 @@ public:
   bool acceptLandGoal(std::shared_ptr<GoalHandleLand> goal);
   bool acceptEnableOffboardGoal(std::shared_ptr<GoalHandleEnableOffboard> goal);
   bool acceptDisableOffboardGoal(std::shared_ptr<GoalHandleDisableOffboard> goal);
+  bool acceptArmGoal(std::shared_ptr<GoalHandleArm> goal);
+  bool acceptDisarmGoal(std::shared_ptr<GoalHandleDisarm> goal);
 
   bool hasActiveTakeoffGoal() const;
   bool hasActiveLandGoal() const;
   bool hasActiveEnableOffboardGoal() const;
   bool hasActiveDisableOffboardGoal() const;
+  bool hasActiveArmGoal() const;
+  bool hasActiveDisarmGoal() const;
   bool isActiveTakeoffGoal(const std::shared_ptr<GoalHandleTakeoff> & goal) const;
   bool isActiveLandGoal(const std::shared_ptr<GoalHandleLand> & goal) const;
   bool isActiveEnableOffboardGoal(
     const std::shared_ptr<GoalHandleEnableOffboard> & goal) const;
   bool isActiveDisableOffboardGoal(
     const std::shared_ptr<GoalHandleDisableOffboard> & goal) const;
+  bool isActiveArmGoal(const std::shared_ptr<GoalHandleArm> & goal) const;
+  bool isActiveDisarmGoal(const std::shared_ptr<GoalHandleDisarm> & goal) const;
 
   void requestTakeoffCancel();
   bool takeoffCancelRequested() const;
@@ -48,6 +60,10 @@ public:
   bool enableOffboardCancelRequested() const;
   void requestDisableOffboardCancel();
   bool disableOffboardCancelRequested() const;
+  void requestArmCancel();
+  bool armCancelRequested() const;
+  void requestDisarmCancel();
+  bool disarmCancelRequested() const;
 
   void publishTakeoffFeedback(const std::shared_ptr<Takeoff::Feedback> & feedback) const;
   void publishLandFeedback(const std::shared_ptr<Land::Feedback> & feedback) const;
@@ -55,6 +71,8 @@ public:
     const std::shared_ptr<EnableOffboard::Feedback> & feedback) const;
   void publishDisableOffboardFeedback(
     const std::shared_ptr<DisableOffboard::Feedback> & feedback) const;
+  void publishArmFeedback(const std::shared_ptr<Arm::Feedback> & feedback) const;
+  void publishDisarmFeedback(const std::shared_ptr<Disarm::Feedback> & feedback) const;
 
   bool succeedTakeoff(const std::string & message);
   bool abortTakeoff(const std::string & message);
@@ -67,6 +85,12 @@ public:
   bool succeedDisableOffboard(const std::string & message);
   bool abortDisableOffboard(const std::string & message);
   bool cancelDisableOffboard(const std::string & message);
+  bool succeedArm(const std::string & message);
+  bool abortArm(const std::string & message);
+  bool cancelArm(const std::string & message);
+  bool succeedDisarm(const std::string & message);
+  bool abortDisarm(const std::string & message);
+  bool cancelDisarm(const std::string & message);
   bool abortRejectedTakeoff(
     const std::shared_ptr<GoalHandleTakeoff> & goal, const std::string & message) const;
   bool abortRejectedLand(
@@ -75,15 +99,23 @@ public:
     const std::shared_ptr<GoalHandleEnableOffboard> & goal, const std::string & message) const;
   bool abortRejectedDisableOffboard(
     const std::shared_ptr<GoalHandleDisableOffboard> & goal, const std::string & message) const;
+  bool abortRejectedArm(
+    const std::shared_ptr<GoalHandleArm> & goal, const std::string & message) const;
+  bool abortRejectedDisarm(
+    const std::shared_ptr<GoalHandleDisarm> & goal, const std::string & message) const;
 
 private:
   std::shared_ptr<GoalHandleTakeoff> active_takeoff_goal_{};
   std::shared_ptr<GoalHandleLand> active_land_goal_{};
   std::shared_ptr<GoalHandleEnableOffboard> active_enable_offboard_goal_{};
   std::shared_ptr<GoalHandleDisableOffboard> active_disable_offboard_goal_{};
+  std::shared_ptr<GoalHandleArm> active_arm_goal_{};
+  std::shared_ptr<GoalHandleDisarm> active_disarm_goal_{};
   bool takeoff_cancel_requested_{false};
   bool enable_offboard_cancel_requested_{false};
   bool disable_offboard_cancel_requested_{false};
+  bool arm_cancel_requested_{false};
+  bool disarm_cancel_requested_{false};
 };
 
 }  // namespace mullet_core::state_machine_detail

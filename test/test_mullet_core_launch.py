@@ -59,11 +59,16 @@ def test_offset_instances_reject_invalid_ranges():
         LAUNCH._parse_offset_instances("2", "254")
 
 
-def test_configs_include_disable_offboard_timeout():
+def test_configs_include_ground_arm_disarm_defaults():
     for config_name in ("mullet_core_params_default.yaml", "mullet_core_params_1.yaml"):
         config_text = (PACKAGE_DIR / "config" / config_name).read_text()
 
         assert "disable_offboard_timeout_s: 5.0" in config_text
+        assert "request_arm_timeout_s: 5.0" in config_text
+        assert "armed_hold_duration_s: 5.0" in config_text
+        assert "request_disarm_timeout_s: 5.0" in config_text
+        assert "request_position_mode_timeout_s: 5.0" in config_text
+        assert "landed_confirmation_s: 0.5" in config_text
 
 
 def test_default_config_omits_deprecated_compatibility_parameters():

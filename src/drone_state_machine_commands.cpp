@@ -23,7 +23,11 @@ constexpr float kCommandModeTolerance = 1e-3F;
 void DroneStateMachine::onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
   if (state_ == DroneState::kCancelingToLand || state_ == DroneState::kLanding ||
-    state_ == DroneState::kOffboardHold || state_ == DroneState::kDisableOffboardRequested ||
+    state_ == DroneState::kOffboardHold || state_ == DroneState::kArmRequested ||
+    state_ == DroneState::kArmCommand || state_ == DroneState::kArmedOffboardHold ||
+    state_ == DroneState::kDisarmCommand || state_ == DroneState::kReleaseOffboardRequest ||
+    state_ == DroneState::kDisarmedOffboardReleaseFailed ||
+    state_ == DroneState::kDisableOffboardRequested ||
     haveActiveLandGoal())
   {
     RCLCPP_DEBUG(get_logger(), "Ignoring external command while landing or in offboard hold");

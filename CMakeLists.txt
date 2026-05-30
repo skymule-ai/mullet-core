@@ -13,7 +13,9 @@ find_package(px4_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/Arm.action"
   "action/DisableOffboard.action"
+  "action/Disarm.action"
   "action/EnableOffboard.action"
   "action/Land.action"
   "action/Takeoff.action"

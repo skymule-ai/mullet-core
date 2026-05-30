@@ -57,6 +57,18 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
     std::bind(&DroneStateMachine::handleLandGoal, this, std::placeholders::_1, std::placeholders::_2),
     std::bind(&DroneStateMachine::handleLandCancel, this, std::placeholders::_1),
     std::bind(&DroneStateMachine::handleLandAccepted, this, std::placeholders::_1));
+  arm_action_server_ = rclcpp_action::create_server<Arm>(
+    this, "arm",
+    std::bind(&DroneStateMachine::handleArmGoal, this, std::placeholders::_1, std::placeholders::_2),
+    std::bind(&DroneStateMachine::handleArmCancel, this, std::placeholders::_1),
+    std::bind(&DroneStateMachine::handleArmAccepted, this, std::placeholders::_1));
+  disarm_action_server_ = rclcpp_action::create_server<Disarm>(
+    this, "disarm",
+    std::bind(
+      &DroneStateMachine::handleDisarmGoal, this, std::placeholders::_1,
+      std::placeholders::_2),
+    std::bind(&DroneStateMachine::handleDisarmCancel, this, std::placeholders::_1),
+    std::bind(&DroneStateMachine::handleDisarmAccepted, this, std::placeholders::_1));
   enable_offboard_action_server_ = rclcpp_action::create_server<EnableOffboard>(
     this, "enable_offboard",
     std::bind(
@@ -119,6 +131,14 @@ void DroneStateMachine::loadParameters()
     "disable_offboard_timeout_s", config_.disable_offboard_timeout_s);
   config_.request_arm_timeout_s = declare_parameter<double>(
     "request_arm_timeout_s", config_.request_arm_timeout_s);
+  config_.armed_hold_duration_s = declare_parameter<double>(
+    "armed_hold_duration_s", config_.armed_hold_duration_s);
+  config_.request_disarm_timeout_s = declare_parameter<double>(
+    "request_disarm_timeout_s", config_.request_disarm_timeout_s);
+  config_.request_position_mode_timeout_s = declare_parameter<double>(
+    "request_position_mode_timeout_s", config_.request_position_mode_timeout_s);
+  config_.landed_confirmation_s = declare_parameter<double>(
+    "landed_confirmation_s", config_.landed_confirmation_s);
   config_.takeoff_timeout_s = declare_parameter<double>("takeoff_timeout_s", config_.takeoff_timeout_s);
   config_.landing_timeout_s = declare_parameter<double>("landing_timeout_s", config_.landing_timeout_s);
   config_.hover_altitude_tolerance_m = declare_parameter<double>(
@@ -143,6 +163,11 @@ void DroneStateMachine::loadParameters()
   config_.request_offboard_timeout_s = std::max(config_.request_offboard_timeout_s, 0.1);
   config_.disable_offboard_timeout_s = std::max(config_.disable_offboard_timeout_s, 0.1);
   config_.request_arm_timeout_s = std::max(config_.request_arm_timeout_s, 0.1);
+  config_.armed_hold_duration_s = std::max(config_.armed_hold_duration_s, 0.1);
+  config_.request_disarm_timeout_s = std::max(config_.request_disarm_timeout_s, 0.1);
+  config_.request_position_mode_timeout_s = std::max(
+    config_.request_position_mode_timeout_s, 0.1);
+  config_.landed_confirmation_s = std::max(config_.landed_confirmation_s, 0.0);
   config_.takeoff_timeout_s = std::max(config_.takeoff_timeout_s, 0.1);
   config_.landing_timeout_s = std::max(config_.landing_timeout_s, 0.1);
   config_.hover_altitude_tolerance_m = std::max(config_.hover_altitude_tolerance_m, 0.05);
@@ -178,6 +203,9 @@ void DroneStateMachine::controlTick()
     } else if (haveActiveDisableOffboardGoal()) {
       abortDisableOffboardGoal("DisableOffboard preempted by emergency land request");
       finishDisableOffboardAttempt("emergency land preempted disable_offboard");
+    } else if (haveActiveArmGoal()) {
+      abortArmGoal("Arm preempted by emergency land request");
+      beginLanding("emergency land preempted arm", true);
     } else if (state_ == DroneState::kLanding) {
       RCLCPP_WARN(get_logger(), "Emergency land request received while already landing");
       resetVehicleCommandRetryTimer();
@@ -212,6 +240,27 @@ void DroneStateMachine::controlTick()
     finishDisableOffboardAttempt("disable_offboard canceled");
   }
 
+  if (action_lifecycle_->armCancelRequested() && haveActiveArmGoal()) {
+    cancelArmGoal("Arm canceled before completion");
+    if (!px4_->isArmed() && px4_->isOffboard()) {
+      release_offboard_after_disarm_ = false;
+      transitionTo(DroneState::kReleaseOffboardRequest, "arm canceled; release offboard");
+    } else {
+      transitionTo(
+        px4_->localPositionValid() ? DroneState::kReady : DroneState::kInit,
+        px4_->localPositionValid() ? "ready after arm cancel" : "waiting for telemetry after arm cancel");
+    }
+  }
+
+  if (action_lifecycle_->disarmCancelRequested() && haveActiveDisarmGoal()) {
+    cancelDisarmGoal("Disarm canceled before completion");
+    if (state_ == DroneState::kDisarmCommand) {
+      armed_hold_deadline_ = current_time +
+        rclcpp::Duration::from_seconds(config_.armed_hold_duration_s);
+      transitionTo(DroneState::kArmedOffboardHold, "disarm canceled");
+    }
+  }
+
   switch (state_) {
     case DroneState::kInit:
       handleInit(current_time);
@@ -230,6 +279,24 @@ void DroneStateMachine::controlTick()
       break;
     case DroneState::kOffboardHold:
       handleOffboardHold(current_time);
+      break;
+    case DroneState::kArmRequested:
+      handleArmRequested(current_time);
+      break;
+    case DroneState::kArmCommand:
+      handleArmCommand(current_time);
+      break;
+    case DroneState::kArmedOffboardHold:
+      handleArmedOffboardHold(current_time);
+      break;
+    case DroneState::kDisarmCommand:
+      handleDisarmCommand(current_time);
+      break;
+    case DroneState::kReleaseOffboardRequest:
+      handleReleaseOffboardRequest(current_time);
+      break;
+    case DroneState::kDisarmedOffboardReleaseFailed:
+      handleDisarmedOffboardReleaseFailed(current_time);
       break;
     case DroneState::kDisableOffboardRequested:
       handleDisableOffboardRequested(current_time);

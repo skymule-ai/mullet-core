@@ -13,6 +13,12 @@ ENABLE_OFFBOARD_REQUESTED
 WARMUP_OFFBOARD_HOLD_SETPOINTS
 REQUEST_OFFBOARD_ONLY
 OFFBOARD_HOLD
+ARM_REQUESTED
+ARM_COMMAND
+ARMED_OFFBOARD_HOLD
+DISARM_COMMAND
+RELEASE_OFFBOARD_REQUEST
+DISARMED_OFFBOARD_RELEASE_FAILED
 DISABLE_OFFBOARD_REQUESTED
 TAKEOFF_REQUESTED
 WARMUP_SETPOINTS
@@ -38,6 +44,13 @@ DISARMED
 | `ENABLE_OFFBOARD_REQUESTED` | `WARMUP_OFFBOARD_HOLD_SETPOINTS` | Next control tick commits the goal. |
 | `WARMUP_OFFBOARD_HOLD_SETPOINTS` | `REQUEST_OFFBOARD_ONLY` | `offboard_warmup_s` elapses. |
 | `REQUEST_OFFBOARD_ONLY` | `OFFBOARD_HOLD` | PX4 reports Offboard mode. |
+| `READY` | `ARM_REQUESTED` | `arm` goal accepted with confirmed landed telemetry. |
+| `OFFBOARD_HOLD` | `ARM_COMMAND` | `arm` goal accepted while already Offboard. |
+| `ARM_COMMAND` | `ARMED_OFFBOARD_HOLD` | PX4 reports armed. |
+| `ARMED_OFFBOARD_HOLD` | `DISARM_COMMAND` | `disarm` goal accepted or armed-hold timer expires with confirmed landed telemetry. |
+| `DISARM_COMMAND` | `RELEASE_OFFBOARD_REQUEST` | PX4 reports disarmed. |
+| `RELEASE_OFFBOARD_REQUEST` | `READY` | PX4 leaves Offboard mode. |
+| `RELEASE_OFFBOARD_REQUEST` | `DISARMED_OFFBOARD_RELEASE_FAILED` | PX4 stays Offboard past `request_position_mode_timeout_s`. |
 | `OFFBOARD_HOLD` | `DISABLE_OFFBOARD_REQUESTED` | `disable_offboard` goal is accepted. |
 | `DISABLE_OFFBOARD_REQUESTED` | `READY` | PX4 leaves Offboard mode. |
 | `READY` | `TAKEOFF_REQUESTED` | `takeoff` goal is accepted. |
@@ -68,6 +81,9 @@ DISARMED
   user-facing land action times out.
 - Disarmed `OFFBOARD_HOLD` ignores external velocity commands and rejects land
   goals because no landing action is required.
+- Direct disarm is a ground-only shutdown guarded by recent, continuously
+  landed `vehicle_land_detected` telemetry. Airborne or uncertain disarm
+  requests are rejected; use `Land` or emergency land for landing recovery.
 
 ## Source References
 

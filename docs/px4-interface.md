@@ -15,12 +15,14 @@ PX4 topics use best-effort, transient-local QoS with keep-last depth `1`.
 | publish | `/fmu/in/vehicle_command` | `/px4_N/fmu/in/vehicle_command` |
 | subscribe | `/fmu/out/vehicle_local_position` | `/px4_N/fmu/out/vehicle_local_position` |
 | subscribe | `/fmu/out/vehicle_status_v1` | `/px4_N/fmu/out/vehicle_status_v1` |
+| subscribe | `/fmu/out/vehicle_land_detected` | `/px4_N/fmu/out/vehicle_land_detected` |
 
 ## Vehicle Commands
 
 | Operation | PX4 command |
 | --- | --- |
 | Arm | `VEHICLE_CMD_COMPONENT_ARM_DISARM`, `param1=1` |
+| Disarm | `VEHICLE_CMD_COMPONENT_ARM_DISARM`, `param1=0` |
 | Offboard mode | `VEHICLE_CMD_DO_SET_MODE`, `param1=1`, `param2=6` |
 | Position mode | `VEHICLE_CMD_DO_SET_MODE`, `param1=1`, `param2=3` |
 | Land | `VEHICLE_CMD_NAV_LAND` |
