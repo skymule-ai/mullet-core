@@ -5,7 +5,7 @@ strict so action clients cannot bypass PX4 telemetry checks or landing recovery.
 
 ## EnableOffboard
 
-Action: `mullet_core/action/EnableOffboard`
+Action: `mullet_interfaces/action/EnableOffboard`
 
 ```text
 goal: empty
@@ -25,7 +25,7 @@ velocity control.
 
 ## Arm
 
-Action: `mullet_core/action/Arm`
+Action: `mullet_interfaces/action/Arm`
 
 ```text
 goal: empty
@@ -50,7 +50,7 @@ releases Offboard.
 
 ## Disarm
 
-Action: `mullet_core/action/Disarm`
+Action: `mullet_interfaces/action/Disarm`
 
 ```text
 goal: empty
@@ -74,7 +74,7 @@ attempts until explicit recovery.
 
 ## DisableOffboard
 
-Action: `mullet_core/action/DisableOffboard`
+Action: `mullet_interfaces/action/DisableOffboard`
 
 ```text
 goal: empty
@@ -94,7 +94,7 @@ and starts landing recovery.
 
 ## Takeoff
 
-Action: `mullet_core/action/Takeoff`
+Action: `mullet_interfaces/action/Takeoff`
 
 ```text
 goal: float32 altitude_m, float32 yaw_rad, bool use_current_yaw
@@ -115,7 +115,7 @@ altitude and vertical-velocity settle behavior.
 
 ## Land
 
-Action: `mullet_core/action/Land`
+Action: `mullet_interfaces/action/Land`
 
 ```text
 goal: empty

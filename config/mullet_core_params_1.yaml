@@ -3,6 +3,10 @@
     # PX4 instance number. instance 0 uses /fmu/... topics; instance N uses /<prefix>_N/fmu/...
     vehicle_instance: 1
     px4_namespace_prefix: "uav"
+    drone_id: ""
+    runtime_mode: "unknown"
+    heartbeat_topic: "/mullet/heartbeat"
+    heartbeat_rate_hz: 10.0
 
     # Soft real-time supervisor loop. PX4's offboard minimum is lower, but this gives jitter margin.
     control_rate_hz: 50.0

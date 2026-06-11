@@ -1,8 +1,0 @@
----
-bool success
-string message
----
-string state
-bool armed
-bool landed
-float32 elapsed_s

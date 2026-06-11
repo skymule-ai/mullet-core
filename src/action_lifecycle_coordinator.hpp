@@ -6,12 +6,12 @@
 
 #include <rclcpp_action/rclcpp_action.hpp>
 
-#include "mullet_core/action/arm.hpp"
-#include "mullet_core/action/disable_offboard.hpp"
-#include "mullet_core/action/disarm.hpp"
-#include "mullet_core/action/enable_offboard.hpp"
-#include "mullet_core/action/land.hpp"
-#include "mullet_core/action/takeoff.hpp"
+#include "mullet_interfaces/action/arm.hpp"
+#include "mullet_interfaces/action/disable_offboard.hpp"
+#include "mullet_interfaces/action/disarm.hpp"
+#include "mullet_interfaces/action/enable_offboard.hpp"
+#include "mullet_interfaces/action/land.hpp"
+#include "mullet_interfaces/action/takeoff.hpp"
 
 namespace mullet_core::state_machine_detail
 {
@@ -19,17 +19,17 @@ namespace mullet_core::state_machine_detail
 class ActionLifecycleCoordinator
 {
 public:
-  using DisableOffboard = mullet_core::action::DisableOffboard;
+  using DisableOffboard = mullet_interfaces::action::DisableOffboard;
   using GoalHandleDisableOffboard = rclcpp_action::ServerGoalHandle<DisableOffboard>;
-  using Arm = mullet_core::action::Arm;
+  using Arm = mullet_interfaces::action::Arm;
   using GoalHandleArm = rclcpp_action::ServerGoalHandle<Arm>;
-  using Disarm = mullet_core::action::Disarm;
+  using Disarm = mullet_interfaces::action::Disarm;
   using GoalHandleDisarm = rclcpp_action::ServerGoalHandle<Disarm>;
-  using EnableOffboard = mullet_core::action::EnableOffboard;
+  using EnableOffboard = mullet_interfaces::action::EnableOffboard;
   using GoalHandleEnableOffboard = rclcpp_action::ServerGoalHandle<EnableOffboard>;
-  using Land = mullet_core::action::Land;
+  using Land = mullet_interfaces::action::Land;
   using GoalHandleLand = rclcpp_action::ServerGoalHandle<Land>;
-  using Takeoff = mullet_core::action::Takeoff;
+  using Takeoff = mullet_interfaces::action::Takeoff;
   using GoalHandleTakeoff = rclcpp_action::ServerGoalHandle<Takeoff>;
 
   bool acceptTakeoffGoal(std::shared_ptr<GoalHandleTakeoff> goal);

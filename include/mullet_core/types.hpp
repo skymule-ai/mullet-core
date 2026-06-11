@@ -58,7 +58,11 @@ struct ControlConfig
 {
   int vehicle_instance{0};
   std::string px4_namespace_prefix{"px4"};
+  std::string drone_id{};
+  std::string runtime_mode{"unknown"};
+  std::string heartbeat_topic{"/mullet/heartbeat"};
   double control_rate_hz{50.0};
+  double heartbeat_rate_hz{10.0};
   double offboard_warmup_s{1.0};
   double command_retry_interval_s{1.0};
   double command_timeout_s{0.25};

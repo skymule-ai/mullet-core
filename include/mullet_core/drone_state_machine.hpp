@@ -9,14 +9,15 @@
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 
-#include "mullet_core/action/arm.hpp"
-#include "mullet_core/action/disable_offboard.hpp"
-#include "mullet_core/action/disarm.hpp"
-#include "mullet_core/action/enable_offboard.hpp"
-#include "mullet_core/action/land.hpp"
-#include "mullet_core/action/takeoff.hpp"
 #include "mullet_core/px4_interface.hpp"
 #include "mullet_core/types.hpp"
+#include "mullet_interfaces/action/arm.hpp"
+#include "mullet_interfaces/action/disable_offboard.hpp"
+#include "mullet_interfaces/action/disarm.hpp"
+#include "mullet_interfaces/action/enable_offboard.hpp"
+#include "mullet_interfaces/action/land.hpp"
+#include "mullet_interfaces/action/takeoff.hpp"
+#include "mullet_interfaces/msg/drone_heartbeat.hpp"
 
 namespace mullet_core::state_machine_detail
 {
@@ -33,21 +34,22 @@ public:
   ~DroneStateMachine() override;
 
 private:
-  using DisableOffboard = mullet_core::action::DisableOffboard;
+  using DisableOffboard = mullet_interfaces::action::DisableOffboard;
   using GoalHandleDisableOffboard = rclcpp_action::ServerGoalHandle<DisableOffboard>;
-  using Arm = mullet_core::action::Arm;
+  using Arm = mullet_interfaces::action::Arm;
   using GoalHandleArm = rclcpp_action::ServerGoalHandle<Arm>;
-  using Disarm = mullet_core::action::Disarm;
+  using Disarm = mullet_interfaces::action::Disarm;
   using GoalHandleDisarm = rclcpp_action::ServerGoalHandle<Disarm>;
-  using EnableOffboard = mullet_core::action::EnableOffboard;
+  using EnableOffboard = mullet_interfaces::action::EnableOffboard;
   using GoalHandleEnableOffboard = rclcpp_action::ServerGoalHandle<EnableOffboard>;
-  using Land = mullet_core::action::Land;
+  using Land = mullet_interfaces::action::Land;
   using GoalHandleLand = rclcpp_action::ServerGoalHandle<Land>;
-  using Takeoff = mullet_core::action::Takeoff;
+  using Takeoff = mullet_interfaces::action::Takeoff;
   using GoalHandleTakeoff = rclcpp_action::ServerGoalHandle<Takeoff>;
 
   void loadParameters();
   void controlTick();
+  void publishHeartbeat();
   void onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg);
   void onLandRequest(const std_msgs::msg::Empty::SharedPtr msg);
 
@@ -130,6 +132,14 @@ private:
   bool shouldRecoverThroughLanding() const;
   bool landedConfirmed(const rclcpp::Time & now) const;
   bool directDisarmAllowed(const rclcpp::Time & now) const;
+  bool anyActionActive() const;
+  bool canTakeoff() const;
+  bool canLand() const;
+  bool canEnableOffboard() const;
+  bool canDisableOffboard() const;
+  bool canArm(const rclcpp::Time & now) const;
+  bool canDisarm(const rclcpp::Time & now) const;
+  bool canEmergencyLand() const;
   bool latchOffboardHoldTarget();
   bool latchTakeoffTarget();
   bool configureTakeoffTarget(const Takeoff::Goal & goal);
@@ -173,12 +183,15 @@ private:
   void maybeLogTiming(const rclcpp::Time & now);
 
   static const char * stateName(DroneState state);
+  static const char * navStateName(std::uint8_t nav_state);
+  static const char * armingStateName(std::uint8_t arming_state);
 
   ControlConfig config_{};
   std::unique_ptr<Px4Interface> px4_;
   ExternalCommandBuffer command_buffer_{};
 
   DroneState state_{DroneState::kInit};
+  DroneState previous_state_{DroneState::kInit};
   rclcpp::Time state_enter_time_{};
   rclcpp::Time landing_start_time_{};
   rclcpp::Time last_vehicle_command_time_{};
@@ -202,6 +215,10 @@ private:
   float hover_z_ned_m_{-2.0F};
   float hover_yaw_rad_{0.0F};
 
+  std::string drone_id_{"uav_0"};
+  std::string fmu_prefix_{};
+  std::uint8_t target_system_{1};
+  std::uint64_t heartbeat_sequence_{0};
   std::string command_topic_{"command"};
   std::string land_topic_{"land_request"};
 
@@ -219,7 +236,9 @@ private:
   rclcpp_action::Server<Disarm>::SharedPtr disarm_action_server_;
   rclcpp_action::Server<EnableOffboard>::SharedPtr enable_offboard_action_server_;
   rclcpp_action::Server<DisableOffboard>::SharedPtr disable_offboard_action_server_;
+  rclcpp::Publisher<mullet_interfaces::msg::DroneHeartbeat>::SharedPtr heartbeat_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 }  // namespace mullet_core

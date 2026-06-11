@@ -16,6 +16,7 @@ void DroneStateMachine::transitionTo(DroneState new_state, const char * reason)
 
   RCLCPP_INFO(
     get_logger(), "State: %s -> %s (%s)", stateName(state_), stateName(new_state), reason);
+  previous_state_ = state_;
   state_ = new_state;
   state_enter_time_ = now();
   if (new_state == DroneState::kRequestOffboard || new_state == DroneState::kRequestOffboardOnly ||
