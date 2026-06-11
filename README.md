@@ -75,14 +75,14 @@ Launch is passive: reaching `READY` means PX4 status and local position are avai
 
 ## Arm / Disarm Actions
 
-Ground arming is available through `mullet_core/action/Arm`. It requires valid
+Ground arming is available through `mullet_interfaces/action/Arm`. It requires valid
 PX4 status, local position, and recent `vehicle_land_detected.landed=true`
 telemetry continuously confirmed for `landed_confirmation_s`. From `READY`, the
 node streams the existing safe Offboard proof-of-life pattern before requesting
 Offboard and arm. From disarmed `OFFBOARD_HOLD`, it arms against the existing
 hold target without re-requesting Offboard.
 
-`mullet_core/action/Disarm` direct-disarms only from confirmed landed
+`mullet_interfaces/action/Disarm` direct-disarms only from confirmed landed
 `ARMED_OFFBOARD_HOLD`. Airborne or uncertain requests are rejected; use the
 `Land` action or emergency land topic to land. After ground disarm, the node
 keeps publishing the safe hold setpoint while requesting Position mode. If PX4
@@ -95,7 +95,7 @@ refuses to leave Offboard before
 Disarmed pre-arm OFFBOARD preparation is commanded through the `enable_offboard` action:
 
 ```text
-mullet_core/action/EnableOffboard
+mullet_interfaces/action/EnableOffboard
 goal: empty
 result: success, message
 feedback: state, offboard, elapsed_s
@@ -112,7 +112,7 @@ A later takeoff action may start from `OFFBOARD_HOLD` when PX4 is still OFFBOARD
 Disarmed pre-arm OFFBOARD hold can be exited explicitly through the `disable_offboard` action:
 
 ```text
-mullet_core/action/DisableOffboard
+mullet_interfaces/action/DisableOffboard
 goal: empty
 result: success, message
 feedback: state, offboard, elapsed_s
@@ -127,7 +127,7 @@ If PX4 does not leave OFFBOARD before `disable_offboard_timeout_s`, the action a
 Takeoff is commanded through the `takeoff` action:
 
 ```text
-mullet_core/action/Takeoff
+mullet_interfaces/action/Takeoff
 goal: altitude_m, yaw_rad, use_current_yaw
 result: success, message
 feedback: state, current_altitude_m, target_altitude_m, altitude_error_m, progress
@@ -147,7 +147,7 @@ Cancellation before this node sends an arm request returns to `READY`. Cancellat
 Managed landing is commanded through the `land` action:
 
 ```text
-mullet_core/action/Land
+mullet_interfaces/action/Land
 goal: empty
 result: success, message
 feedback: state, armed, elapsed_s
@@ -216,7 +216,7 @@ Each node also validates that its own `vehicle_instance` is in `[0, 254]`.
 ## Takeoff Action Client Example
 
 ```
-ros2 action send_goal /px4_1/takeoff mullet_core/action/Takeoff "{altitude_m: 2.0, yaw_rad: 0.0, use_current_yaw: true}" --feedback
+ros2 action send_goal /px4_1/takeoff mullet_interfaces/action/Takeoff "{altitude_m: 2.0, yaw_rad: 0.0, use_current_yaw: true}" --feedback
 ```
 
 ## EnableOffboard Action Client Example
@@ -224,13 +224,13 @@ ros2 action send_goal /px4_1/takeoff mullet_core/action/Takeoff "{altitude_m: 2.
 For PX4 instance `0`:
 
 ```bash
-ros2 action send_goal /enable_offboard mullet_core/action/EnableOffboard "{}" --feedback
+ros2 action send_goal /enable_offboard mullet_interfaces/action/EnableOffboard "{}" --feedback
 ```
 
 For PX4 instance `1`:
 
 ```bash
-ros2 action send_goal /px4_1/enable_offboard mullet_core/action/EnableOffboard "{}" --feedback
+ros2 action send_goal /px4_1/enable_offboard mullet_interfaces/action/EnableOffboard "{}" --feedback
 ```
 
 ## Land Action Client Example
@@ -238,13 +238,13 @@ ros2 action send_goal /px4_1/enable_offboard mullet_core/action/EnableOffboard "
 For PX4 instance `0`:
 
 ```bash
-ros2 action send_goal /land mullet_core/action/Land "{}" --feedback
+ros2 action send_goal /land mullet_interfaces/action/Land "{}" --feedback
 ```
 
 For PX4 instance `1`:
 
 ```bash
-ros2 action send_goal /px4_1/land mullet_core/action/Land "{}" --feedback
+ros2 action send_goal /px4_1/land mullet_interfaces/action/Land "{}" --feedback
 ```
 
 ## Parameters

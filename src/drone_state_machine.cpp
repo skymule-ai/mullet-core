@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <string>
 
 namespace mullet_core
 {
@@ -18,6 +19,25 @@ rclcpp::QoS commandQoS()
   qos.best_effort();
   qos.durability_volatile();
   return qos;
+}
+
+rclcpp::QoS heartbeatQoS()
+{
+  auto qos = rclcpp::QoS(rclcpp::KeepLast(5));
+  qos.reliable();
+  qos.durability_volatile();
+  return qos;
+}
+
+std::string joinRosPath(const std::string & ns, const std::string & name)
+{
+  if (ns.empty() || ns == "/") {
+    return "/" + name;
+  }
+  if (ns.back() == '/') {
+    return ns + name;
+  }
+  return ns + "/" + name;
 }
 
 void declareDeprecatedCompatibilityParameters(rclcpp::Node & node)
@@ -38,7 +58,11 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
     std::string{} :
     "/" + config_.px4_namespace_prefix + "_" + std::to_string(config_.vehicle_instance);
   const auto target_system = targetSystemFromVehicleInstance(config_.vehicle_instance);
-  px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix, target_system);
+  fmu_prefix_ = fmu_prefix;
+  target_system_ = target_system;
+  drone_id_ = config_.drone_id.empty() ?
+    "uav_" + std::to_string(config_.vehicle_instance) : config_.drone_id;
+  px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix_, target_system_);
   action_lifecycle_ = std::make_unique<state_machine_detail::ActionLifecycleCoordinator>();
 
   command_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
@@ -83,18 +107,24 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
       std::placeholders::_2),
     std::bind(&DroneStateMachine::handleDisableOffboardCancel, this, std::placeholders::_1),
     std::bind(&DroneStateMachine::handleDisableOffboardAccepted, this, std::placeholders::_1));
+  heartbeat_pub_ = create_publisher<mullet_interfaces::msg::DroneHeartbeat>(
+    config_.heartbeat_topic, heartbeatQoS());
 
   const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
     std::chrono::duration<double>(1.0 / std::max(config_.control_rate_hz, 1.0)));
+  const auto heartbeat_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::duration<double>(1.0 / std::max(config_.heartbeat_rate_hz, 1.0)));
   state_enter_time_ = now();
   last_timing_log_time_ = state_enter_time_;
   control_timer_ = create_wall_timer(period, [this]() {controlTick();});
+  heartbeat_timer_ = create_wall_timer(heartbeat_period, [this]() {publishHeartbeat();});
 
   RCLCPP_INFO(
     get_logger(),
-    "mullet_core started: instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz",
-    config_.vehicle_instance, fmu_prefix.c_str(), static_cast<unsigned int>(target_system),
-    config_.control_rate_hz);
+    "mullet_core started: drone_id='%s' instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz heartbeat=%.1f Hz",
+    drone_id_.c_str(), config_.vehicle_instance, fmu_prefix_.c_str(),
+    static_cast<unsigned int>(target_system_), config_.control_rate_hz,
+    config_.heartbeat_rate_hz);
 }
 
 DroneStateMachine::~DroneStateMachine() = default;
@@ -104,7 +134,11 @@ void DroneStateMachine::loadParameters()
   config_.vehicle_instance = declare_parameter<int>("vehicle_instance", config_.vehicle_instance);
   config_.px4_namespace_prefix = declare_parameter<std::string>(
     "px4_namespace_prefix", config_.px4_namespace_prefix);
+  config_.drone_id = declare_parameter<std::string>("drone_id", config_.drone_id);
+  config_.runtime_mode = declare_parameter<std::string>("runtime_mode", config_.runtime_mode);
   config_.control_rate_hz = declare_parameter<double>("control_rate_hz", config_.control_rate_hz);
+  config_.heartbeat_rate_hz = declare_parameter<double>("heartbeat_rate_hz", config_.heartbeat_rate_hz);
+  config_.heartbeat_topic = declare_parameter<std::string>("heartbeat_topic", config_.heartbeat_topic);
   config_.offboard_warmup_s = declare_parameter<double>("offboard_warmup_s", config_.offboard_warmup_s);
   config_.command_retry_interval_s = declare_parameter<double>(
     "command_retry_interval_s", config_.command_retry_interval_s);
@@ -151,6 +185,7 @@ void DroneStateMachine::loadParameters()
   land_topic_ = declare_parameter<std::string>("land_topic", land_topic_);
 
   config_.control_rate_hz = std::max(config_.control_rate_hz, 2.0);
+  config_.heartbeat_rate_hz = std::max(config_.heartbeat_rate_hz, 1.0);
   config_.offboard_warmup_s = std::max(config_.offboard_warmup_s, 1.0);
   config_.command_retry_interval_s = std::max(config_.command_retry_interval_s, 0.1);
   config_.command_timeout_s = std::max(config_.command_timeout_s, 0.0);
@@ -174,6 +209,105 @@ void DroneStateMachine::loadParameters()
   config_.hover_vertical_velocity_tolerance_mps = std::max(
     config_.hover_vertical_velocity_tolerance_mps, 0.01);
   config_.hover_settle_time_s = std::max(config_.hover_settle_time_s, 0.0);
+}
+
+void DroneStateMachine::publishHeartbeat()
+{
+  mullet_interfaces::msg::DroneHeartbeat msg{};
+  const auto current_time = now();
+  const bool has_local_position = px4_->hasLocalPosition();
+  const bool local_position_valid = px4_->localPositionValid();
+  const bool has_vehicle_status = px4_->hasVehicleStatus();
+  const bool command_stream_valid = commandFresh(current_time);
+  const auto ros_namespace = std::string(get_namespace());
+
+  msg.schema_version = 1;
+  msg.stamp = current_time;
+  msg.sequence = heartbeat_sequence_++;
+  msg.drone_id = drone_id_;
+  msg.vehicle_instance = static_cast<std::uint8_t>(config_.vehicle_instance);
+  msg.target_system = target_system_;
+  msg.ros_namespace = ros_namespace;
+  msg.px4_fmu_prefix = fmu_prefix_;
+  msg.runtime_mode = config_.runtime_mode;
+
+  msg.takeoff_action_path = joinRosPath(ros_namespace, "takeoff");
+  msg.land_action_path = joinRosPath(ros_namespace, "land");
+  msg.enable_offboard_action_path = joinRosPath(ros_namespace, "enable_offboard");
+  msg.disable_offboard_action_path = joinRosPath(ros_namespace, "disable_offboard");
+  msg.arm_action_path = joinRosPath(ros_namespace, "arm");
+  msg.disarm_action_path = joinRosPath(ros_namespace, "disarm");
+
+  msg.state = static_cast<std::uint16_t>(state_);
+  msg.state_label = stateName(state_);
+  msg.previous_state = static_cast<std::uint16_t>(previous_state_);
+  msg.previous_state_label = stateName(previous_state_);
+
+  msg.core_alive = true;
+  msg.has_vehicle_status = has_vehicle_status;
+  msg.has_local_position = has_local_position;
+  msg.has_land_detected = px4_->hasLandDetected();
+  msg.has_command_stream = command_buffer_.latest_velocity.valid;
+  msg.has_action_state = true;
+
+  msg.armed = px4_->isArmed();
+  msg.offboard = px4_->isOffboard();
+  msg.landed = px4_->isLanded();
+  msg.local_position_valid = local_position_valid;
+  msg.command_stream_valid = command_stream_valid;
+
+  if (has_vehicle_status) {
+    msg.px4_nav_state = px4_->vehicleStatus().nav_state;
+    msg.px4_nav_state_label = navStateName(msg.px4_nav_state);
+    msg.px4_arming_state = px4_->vehicleStatus().arming_state;
+    msg.px4_arming_state_label = armingStateName(msg.px4_arming_state);
+  } else {
+    msg.px4_nav_state_label = "UNKNOWN";
+    msg.px4_arming_state_label = "UNKNOWN";
+  }
+
+  if (local_position_valid) {
+    msg.x = px4_->localPosition().x;
+    msg.y = px4_->localPosition().y;
+    msg.z = px4_->localPosition().z;
+    msg.yaw = px4_->localPosition().heading;
+  }
+
+  msg.takeoff_active = haveActiveTakeoffGoal();
+  msg.land_active = haveActiveLandGoal();
+  msg.enable_offboard_active = haveActiveEnableOffboardGoal();
+  msg.disable_offboard_active = haveActiveDisableOffboardGoal();
+  msg.arm_active = haveActiveArmGoal();
+  msg.disarm_active = haveActiveDisarmGoal();
+  if (msg.takeoff_active) {
+    msg.active_action = "takeoff";
+    msg.active_action_cancelable = true;
+  } else if (msg.land_active) {
+    msg.active_action = "land";
+    msg.active_action_cancelable = false;
+  } else if (msg.enable_offboard_active) {
+    msg.active_action = "enable_offboard";
+    msg.active_action_cancelable = true;
+  } else if (msg.disable_offboard_active) {
+    msg.active_action = "disable_offboard";
+    msg.active_action_cancelable = true;
+  } else if (msg.arm_active) {
+    msg.active_action = "arm";
+    msg.active_action_cancelable = true;
+  } else if (msg.disarm_active) {
+    msg.active_action = "disarm";
+    msg.active_action_cancelable = true;
+  }
+
+  msg.can_takeoff = canTakeoff();
+  msg.can_land = canLand();
+  msg.can_enable_offboard = canEnableOffboard();
+  msg.can_disable_offboard = canDisableOffboard();
+  msg.can_arm = canArm(current_time);
+  msg.can_disarm = canDisarm(current_time);
+  msg.can_emergency_land = canEmergencyLand();
+
+  heartbeat_pub_->publish(msg);
 }
 
 void DroneStateMachine::controlTick()

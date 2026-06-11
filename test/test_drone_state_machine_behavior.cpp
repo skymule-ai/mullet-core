@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <mullet_interfaces/msg/drone_heartbeat.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
@@ -28,12 +29,13 @@ namespace
 
 using namespace std::chrono_literals;
 
-using DisableOffboard = mullet_core::action::DisableOffboard;
-using Arm = mullet_core::action::Arm;
-using Disarm = mullet_core::action::Disarm;
-using EnableOffboard = mullet_core::action::EnableOffboard;
-using Land = mullet_core::action::Land;
-using Takeoff = mullet_core::action::Takeoff;
+using DisableOffboard = mullet_interfaces::action::DisableOffboard;
+using Arm = mullet_interfaces::action::Arm;
+using Disarm = mullet_interfaces::action::Disarm;
+using EnableOffboard = mullet_interfaces::action::EnableOffboard;
+using Land = mullet_interfaces::action::Land;
+using Takeoff = mullet_interfaces::action::Takeoff;
+using DroneHeartbeat = mullet_interfaces::msg::DroneHeartbeat;
 using VehicleCommand = px4_msgs::msg::VehicleCommand;
 using VehicleLandDetected = px4_msgs::msg::VehicleLandDetected;
 using VehicleLocalPosition = px4_msgs::msg::VehicleLocalPosition;
@@ -405,6 +407,12 @@ protected:
       client_node_, "enable_offboard");
     disable_offboard_client_ = rclcpp_action::create_client<DisableOffboard>(
       client_node_, "disable_offboard");
+    heartbeat_sub_ = client_node_->create_subscription<DroneHeartbeat>(
+      "/mullet/heartbeat", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile(),
+      [this](const DroneHeartbeat::SharedPtr msg) {
+        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+        heartbeats_.push_back(*msg);
+      });
 
     executor_->add_node(fake_node_);
     executor_->add_node(client_node_);
@@ -459,6 +467,18 @@ protected:
       fake_px4_->publishReadyTelemetry();
       std::this_thread::sleep_for(50ms);
     }
+  }
+
+  std::vector<DroneHeartbeat> heartbeats() const
+  {
+    const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+    return heartbeats_;
+  }
+
+  DroneHeartbeat latestHeartbeat() const
+  {
+    const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+    return heartbeats_.empty() ? DroneHeartbeat{} : heartbeats_.back();
   }
 
   std::shared_ptr<rclcpp_action::ClientGoalHandle<Takeoff>> sendTakeoffGoal(
@@ -622,6 +642,9 @@ protected:
   rclcpp_action::Client<DisableOffboard>::SharedPtr disable_offboard_client_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr command_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr land_request_pub_;
+  rclcpp::Subscription<DroneHeartbeat>::SharedPtr heartbeat_sub_;
+  mutable std::mutex heartbeat_mutex_;
+  std::vector<DroneHeartbeat> heartbeats_;
   std::thread spin_thread_;
 };
 
@@ -660,6 +683,12 @@ protected:
       "command", commandQoS());
     takeoff_client_ = rclcpp_action::create_client<Takeoff>(client_node_, "takeoff");
     land_client_ = rclcpp_action::create_client<Land>(client_node_, "land");
+    heartbeat_sub_ = client_node_->create_subscription<DroneHeartbeat>(
+      "/mullet/heartbeat", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile(),
+      [this](const DroneHeartbeat::SharedPtr msg) {
+        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+        heartbeats_.push_back(*msg);
+      });
 
     executor_->add_node(fake_node_);
     executor_->add_node(client_node_);
@@ -717,6 +746,12 @@ protected:
       client_node_, "enable_offboard");
     disable_offboard_client_ = rclcpp_action::create_client<DisableOffboard>(
       client_node_, "disable_offboard");
+    heartbeat_sub_ = client_node_->create_subscription<DroneHeartbeat>(
+      "/mullet/heartbeat", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile(),
+      [this](const DroneHeartbeat::SharedPtr msg) {
+        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+        heartbeats_.push_back(*msg);
+      });
 
     executor_->add_node(fake_node_);
     executor_->add_node(client_node_);
@@ -731,6 +766,77 @@ protected:
     ASSERT_TRUE(disable_offboard_client_->wait_for_action_server(2s));
   }
 };
+
+TEST_F(DroneStateMachineBehavior, HeartbeatPublishesBeforePx4TelemetryReady)
+{
+  ASSERT_TRUE(waitFor([this]() {return !heartbeats().empty();}, 2s));
+
+  const auto heartbeat = latestHeartbeat();
+  EXPECT_EQ(heartbeat.schema_version, 1U);
+  EXPECT_EQ(heartbeat.drone_id, "uav_0");
+  EXPECT_EQ(heartbeat.vehicle_instance, 0U);
+  EXPECT_EQ(heartbeat.target_system, 1U);
+  EXPECT_EQ(heartbeat.ros_namespace, "/");
+  EXPECT_EQ(heartbeat.takeoff_action_path, "/takeoff");
+  EXPECT_TRUE(heartbeat.core_alive);
+  EXPECT_FALSE(heartbeat.has_vehicle_status);
+  EXPECT_FALSE(heartbeat.has_local_position);
+  EXPECT_FALSE(heartbeat.local_position_valid);
+  EXPECT_EQ(heartbeat.state_label, "INIT");
+}
+
+TEST_F(DroneStateMachineBehavior, HeartbeatSequenceIncrementsMonotonically)
+{
+  ASSERT_TRUE(waitFor([this]() {return heartbeats().size() >= 3U;}, 2s));
+
+  const auto samples = heartbeats();
+  for (std::size_t i = 1; i < samples.size(); ++i) {
+    EXPECT_GT(samples[i].sequence, samples[i - 1].sequence);
+  }
+}
+
+TEST_F(DroneStateMachineBehavior, HeartbeatReportsPreviousStateAfterTransition)
+{
+  publishReadyAndWait();
+
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.state_label == "READY" && heartbeat.previous_state_label == "INIT";
+  }, 2s));
+}
+
+TEST_F(DroneStateMachineBehavior, HeartbeatInvalidLocalPositionDoesNotImplyPose)
+{
+  publishReadyAndWait();
+  fake_px4_->publishInvalidLocalPosition();
+
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.has_local_position && !heartbeat.local_position_valid;
+  }, 2s));
+
+  const auto heartbeat = latestHeartbeat();
+  EXPECT_FALSE(heartbeat.local_position_valid);
+  EXPECT_DOUBLE_EQ(heartbeat.x, 0.0);
+  EXPECT_DOUBLE_EQ(heartbeat.y, 0.0);
+  EXPECT_DOUBLE_EQ(heartbeat.z, 0.0);
+  EXPECT_DOUBLE_EQ(heartbeat.yaw, 0.0);
+}
+
+TEST_F(DroneStateMachineBehavior, HeartbeatActionAvailabilityChangesWithTelemetry)
+{
+  ASSERT_TRUE(waitFor([this]() {return !heartbeats().empty();}, 2s));
+  EXPECT_FALSE(latestHeartbeat().can_takeoff);
+  EXPECT_FALSE(latestHeartbeat().can_enable_offboard);
+
+  publishReadyAndWait();
+
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.state_label == "READY" && heartbeat.can_takeoff &&
+           heartbeat.can_enable_offboard && heartbeat.can_arm;
+  }, 2s));
+}
 
 TEST_F(DroneStateMachineBehavior, TakeoffRejectedBeforePx4TelemetryReady)
 {
