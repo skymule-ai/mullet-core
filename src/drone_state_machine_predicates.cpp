@@ -249,40 +249,42 @@ const char * DroneStateMachine::stateName(DroneState state)
 
 const char * DroneStateMachine::navStateName(std::uint8_t nav_state)
 {
+  using VehicleStatus = px4_msgs::msg::VehicleStatus;
+
   switch (nav_state) {
-    case 0:
+    case VehicleStatus::NAVIGATION_STATE_MANUAL:
       return "MANUAL";
-    case 1:
+    case VehicleStatus::NAVIGATION_STATE_ALTCTL:
       return "ALTCTL";
-    case 2:
+    case VehicleStatus::NAVIGATION_STATE_POSCTL:
       return "POSCTL";
-    case 3:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_MISSION:
       return "AUTO_MISSION";
-    case 4:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_LOITER:
       return "AUTO_LOITER";
-    case 5:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_RTL:
       return "AUTO_RTL";
-    case 10:
+    case VehicleStatus::NAVIGATION_STATE_ACRO:
       return "ACRO";
-    case 12:
+    case VehicleStatus::NAVIGATION_STATE_DESCEND:
       return "DESCEND";
-    case 13:
+    case VehicleStatus::NAVIGATION_STATE_TERMINATION:
       return "TERMINATION";
-    case 14:
+    case VehicleStatus::NAVIGATION_STATE_OFFBOARD:
       return "OFFBOARD";
-    case 15:
+    case VehicleStatus::NAVIGATION_STATE_STAB:
       return "STAB";
-    case 17:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_TAKEOFF:
       return "AUTO_TAKEOFF";
-    case 18:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_LAND:
       return "AUTO_LAND";
-    case 19:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
       return "AUTO_FOLLOW_TARGET";
-    case 20:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_PRECLAND:
       return "AUTO_PRECLAND";
-    case 21:
+    case VehicleStatus::NAVIGATION_STATE_ORBIT:
       return "ORBIT";
-    case 22:
+    case VehicleStatus::NAVIGATION_STATE_AUTO_VTOL_TAKEOFF:
       return "AUTO_VTOL_TAKEOFF";
   }
   return "UNKNOWN";
@@ -290,19 +292,13 @@ const char * DroneStateMachine::navStateName(std::uint8_t nav_state)
 
 const char * DroneStateMachine::armingStateName(std::uint8_t arming_state)
 {
+  using VehicleStatus = px4_msgs::msg::VehicleStatus;
+
   switch (arming_state) {
-    case 0:
-      return "INIT";
-    case 1:
-      return "STANDBY";
-    case 2:
+    case VehicleStatus::ARMING_STATE_DISARMED:
+      return "DISARMED";
+    case VehicleStatus::ARMING_STATE_ARMED:
       return "ARMED";
-    case 3:
-      return "STANDBY_ERROR";
-    case 4:
-      return "SHUTDOWN";
-    case 5:
-      return "IN_AIR_RESTORE";
   }
   return "UNKNOWN";
 }
