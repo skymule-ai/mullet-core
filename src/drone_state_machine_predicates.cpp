@@ -68,7 +68,7 @@ bool DroneStateMachine::shouldRecoverThroughLanding() const
 
 bool DroneStateMachine::landedConfirmed(const rclcpp::Time & current_time) const
 {
-  const double max_age_s = std::min(5.0, config_.landed_confirmation_s + 0.5);
+  const double max_age_s = std::max(5.0, config_.landed_confirmation_s + 0.5);
   return px4_->landedContinuouslyFor(
     current_time, config_.landed_confirmation_s, max_age_s);
 }
@@ -89,28 +89,24 @@ bool DroneStateMachine::canTakeoff() const
   if (anyActionActive() || state_ == DroneState::kCancelingToLand || state_ == DroneState::kLanding) {
     return false;
   }
-  if (state_ != DroneState::kReady && state_ != DroneState::kOffboardHold &&
-    state_ != DroneState::kArmedOffboardHold)
+  if (state_ != DroneState::kReady && state_ != DroneState::kArmedHold)
   {
     return false;
   }
   if (!px4_->hasVehicleStatus() || !px4_->localPositionValid()) {
     return false;
   }
-  if (px4_->isArmed() && state_ != DroneState::kArmedOffboardHold) {
+  if (px4_->isArmed() && state_ != DroneState::kArmedHold) {
     return false;
   }
-  return state_ != DroneState::kOffboardHold || px4_->isOffboard();
+  return true;
 }
 
-bool DroneStateMachine::canLand() const
+bool DroneStateMachine::canLand(const rclcpp::Time & current_time) const
 {
   if (haveActiveLandGoal() || haveActiveDisableOffboardGoal() ||
     haveActiveArmGoal() || haveActiveDisarmGoal() || haveActiveEnableOffboardGoal())
   {
-    return false;
-  }
-  if (state_ == DroneState::kOffboardHold && !px4_->isArmed()) {
     return false;
   }
   const bool interrupting_takeoff = activeTakeoffState();
@@ -126,7 +122,7 @@ bool DroneStateMachine::canLand() const
   if (!px4_->hasVehicleStatus()) {
     return false;
   }
-  return interrupting_takeoff || px4_->isArmed();
+  return interrupting_takeoff || (px4_->isArmed() && !landedConfirmed(current_time));
 }
 
 bool DroneStateMachine::canEnableOffboard() const
@@ -138,7 +134,7 @@ bool DroneStateMachine::canEnableOffboard() const
 
 bool DroneStateMachine::canDisableOffboard() const
 {
-  return state_ == DroneState::kOffboardHold && !anyActionActive() &&
+  return state_ == DroneState::kReady && !anyActionActive() &&
          px4_->hasVehicleStatus() && px4_->localPositionValid() &&
          !px4_->isArmed() && px4_->isOffboard();
 }
@@ -148,10 +144,10 @@ bool DroneStateMachine::canArm(const rclcpp::Time & current_time) const
   if (anyActionActive()) {
     return false;
   }
-  if (state_ == DroneState::kArmedOffboardHold) {
+  if (state_ == DroneState::kArmedHold) {
     return px4_->isArmed() && landedConfirmed(current_time);
   }
-  if (state_ != DroneState::kReady && state_ != DroneState::kOffboardHold) {
+  if (state_ != DroneState::kReady) {
     return false;
   }
   if (!px4_->hasVehicleStatus() || !px4_->localPositionValid() || !px4_->hasLandDetected()) {
@@ -160,7 +156,7 @@ bool DroneStateMachine::canArm(const rclcpp::Time & current_time) const
   if (px4_->isArmed() || !landedConfirmed(current_time)) {
     return false;
   }
-  return state_ != DroneState::kOffboardHold || px4_->isOffboard();
+  return true;
 }
 
 bool DroneStateMachine::canDisarm(const rclcpp::Time & current_time) const
@@ -171,21 +167,15 @@ bool DroneStateMachine::canDisarm(const rclcpp::Time & current_time) const
   {
     return false;
   }
-  if ((state_ == DroneState::kReady || state_ == DroneState::kOffboardHold) && !px4_->isArmed()) {
-    return true;
-  }
-  return state_ == DroneState::kArmedOffboardHold && directDisarmAllowed(current_time);
+  return state_ == DroneState::kArmedHold && directDisarmAllowed(current_time);
 }
 
-bool DroneStateMachine::canEmergencyLand() const
+bool DroneStateMachine::canEmergencyLand(const rclcpp::Time & current_time) const
 {
   if (state_ == DroneState::kDisarmed || state_ == DroneState::kLanding) {
     return false;
   }
-  if (state_ == DroneState::kOffboardHold && !px4_->isArmed()) {
-    return false;
-  }
-  return px4_->hasVehicleStatus() && px4_->isArmed();
+  return px4_->hasVehicleStatus() && px4_->isArmed() && !landedConfirmed(current_time);
 }
 
 const char * DroneStateMachine::stateName(DroneState state)
@@ -201,14 +191,12 @@ const char * DroneStateMachine::stateName(DroneState state)
       return "WARMUP_OFFBOARD_HOLD_SETPOINTS";
     case DroneState::kRequestOffboardOnly:
       return "REQUEST_OFFBOARD_ONLY";
-    case DroneState::kOffboardHold:
-      return "OFFBOARD_HOLD";
     case DroneState::kArmRequested:
       return "ARM_REQUESTED";
     case DroneState::kArmCommand:
       return "ARM_COMMAND";
-    case DroneState::kArmedOffboardHold:
-      return "ARMED_OFFBOARD_HOLD";
+    case DroneState::kArmedHold:
+      return "ARMED_HOLD";
     case DroneState::kDisarmCommand:
       return "DISARM_COMMAND";
     case DroneState::kReleaseOffboardRequest:

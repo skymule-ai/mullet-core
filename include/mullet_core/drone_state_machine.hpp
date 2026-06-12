@@ -94,10 +94,9 @@ private:
   void handleEnableOffboardRequested(const rclcpp::Time & now);
   void handleWarmupOffboardHoldSetpoints(const rclcpp::Time & now);
   void handleRequestOffboardOnly(const rclcpp::Time & now);
-  void handleOffboardHold(const rclcpp::Time & now);
   void handleArmRequested(const rclcpp::Time & now);
   void handleArmCommand(const rclcpp::Time & now);
-  void handleArmedOffboardHold(const rclcpp::Time & now);
+  void handleArmedHold(const rclcpp::Time & now);
   void handleDisarmCommand(const rclcpp::Time & now);
   void handleReleaseOffboardRequest(const rclcpp::Time & now);
   void handleDisarmedOffboardReleaseFailed(const rclcpp::Time & now);
@@ -134,12 +133,12 @@ private:
   bool directDisarmAllowed(const rclcpp::Time & now) const;
   bool anyActionActive() const;
   bool canTakeoff() const;
-  bool canLand() const;
+  bool canLand(const rclcpp::Time & now) const;
   bool canEnableOffboard() const;
   bool canDisableOffboard() const;
   bool canArm(const rclcpp::Time & now) const;
   bool canDisarm(const rclcpp::Time & now) const;
-  bool canEmergencyLand() const;
+  bool canEmergencyLand(const rclcpp::Time & now) const;
   bool latchOffboardHoldTarget();
   bool latchTakeoffTarget();
   bool configureTakeoffTarget(const Takeoff::Goal & goal);
@@ -202,8 +201,7 @@ private:
   bool timing_initialized_{false};
   bool position_mode_requested_for_landing_{false};
   bool landing_timeout_reported_{false};
-  bool arm_started_from_offboard_hold_{false};
-  bool release_offboard_after_disarm_{false};
+  bool arm_started_from_ready_offboard_{false};
   rclcpp::Time armed_hold_deadline_{};
 
   float takeoff_x_ned_m_{0.0F};

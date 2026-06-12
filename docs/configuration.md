@@ -39,7 +39,7 @@ Instance values must be unique and in `[0, 254]`.
 | `request_arm_timeout_s` | `5.0` | Timeout while waiting for PX4 to report armed. |
 | `armed_hold_duration_s` | `5.0` | Time this node holds armed-on-ground Offboard before requesting disarm. PX4 may disarm earlier via native PX4 parameters. |
 | `request_disarm_timeout_s` | `5.0` | Timeout while waiting for PX4 to report disarmed after a direct ground disarm request. |
-| `request_position_mode_timeout_s` | `5.0` | Timeout while waiting for PX4 to leave Offboard after ground disarm. |
+| `request_position_mode_timeout_s` | `5.0` | Timeout while waiting for PX4 to leave Offboard during explicit release/recovery. |
 | `landed_confirmation_s` | `0.5` | Required continuous `vehicle_land_detected.landed=true` duration before direct disarm or ground arm. |
 | `takeoff_timeout_s` | `20.0` | Timeout while waiting for takeoff completion. |
 | `landing_timeout_s` | `30.0` | User-facing land action timeout. Landing recovery continues afterward. |

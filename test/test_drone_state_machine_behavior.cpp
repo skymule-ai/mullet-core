@@ -599,28 +599,12 @@ protected:
       return fake_px4_->setModeCount(1.0F, 6.0F) > 0 &&
              fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM) > 0;
     }, 3s));
+    fake_px4_->publishLandDetected(false);
     fake_px4_->publishLocalPosition(-2.0F, 0.0F, 0.0F);
     auto result = waitTakeoffResult(handle);
     ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
     ASSERT_TRUE(result.result->success);
     ASSERT_EQ(result.result->message, "Takeoff complete");
-  }
-
-  void enterDisarmedOffboardReleaseFailed()
-  {
-    publishReadyAndWait();
-    fake_px4_->setAutoPositionMode(false);
-
-    auto arm = sendArmGoal();
-    ASSERT_NE(arm, nullptr);
-    auto arm_result = waitArmResult(arm);
-    ASSERT_EQ(arm_result.code, rclcpp_action::ResultCode::SUCCEEDED);
-    ASSERT_TRUE(arm_result.result->success);
-
-    ASSERT_TRUE(waitFor([this]() {
-      return fake_px4_->setModeCount(1.0F, 3.0F) > 0;
-    }, 3s));
-    std::this_thread::sleep_for(500ms);
   }
 
   void publishLandRequest()
@@ -919,7 +903,7 @@ TEST_F(
   EXPECT_GT(fake_px4_->setModeCount(1.0F, 6.0F), 1U);
 }
 
-TEST_F(DroneStateMachineBehavior, DisarmFromArmedOffboardHoldDirectDisarmsThenReleasesOffboard)
+TEST_F(DroneStateMachineBehavior, DisarmFromArmedHoldDirectDisarmsAndKeepsOffboard)
 {
   publishReadyAndWait();
 
@@ -927,67 +911,26 @@ TEST_F(DroneStateMachineBehavior, DisarmFromArmedOffboardHoldDirectDisarmsThenRe
   ASSERT_NE(arm, nullptr);
   ASSERT_EQ(waitArmResult(arm).code, rclcpp_action::ResultCode::SUCCEEDED);
 
+  const auto before_position_mode_count = fake_px4_->setModeCount(1.0F, 3.0F);
   auto disarm = sendDisarmGoal();
   ASSERT_NE(disarm, nullptr);
   auto result = waitDisarmResult(disarm);
 
   EXPECT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
   EXPECT_TRUE(result.result->success);
-  EXPECT_EQ(result.result->message, "Vehicle disarmed and Offboard released");
-  EXPECT_GT(fake_px4_->setModeCount(1.0F, 3.0F), 0U);
+  EXPECT_EQ(result.result->message, "Vehicle disarmed");
+  EXPECT_EQ(fake_px4_->setModeCount(1.0F, 3.0F), before_position_mode_count);
   EXPECT_GT(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 1U);
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
-}
 
-TEST_F(
-  DroneStateMachineBehavior,
-  DisarmedOffboardReleaseFailureRejectsActionsUntilPx4LeavesOffboard)
-{
-  enterDisarmedOffboardReleaseFailed();
+  auto disable = sendDisableOffboardGoal();
+  ASSERT_NE(disable, nullptr);
+  auto disable_result = waitDisableOffboardResult(disable);
 
-  EXPECT_EQ(sendArmGoal(), nullptr);
-  EXPECT_EQ(sendTakeoffGoal(), nullptr);
-  EXPECT_EQ(sendDisarmGoal(), nullptr);
-
-  const auto hold_setpoint_count = fake_px4_->positionSetpointCountAtZ(0.0F);
-  std::this_thread::sleep_for(150ms);
-  EXPECT_GT(fake_px4_->positionSetpointCountAtZ(0.0F), hold_setpoint_count);
-
-  fake_px4_->setOffboard(false);
-  fake_px4_->publishLocalPosition(0.0F, 0.0F, 0.0F);
-
-  std::shared_ptr<rclcpp_action::ClientGoalHandle<Arm>> arm;
-  ASSERT_TRUE(waitFor([this, &arm]() {
-    arm = sendArmGoal();
-    return arm != nullptr;
-  }, 2s));
-  auto arm_result = waitArmResult(arm);
-  EXPECT_EQ(arm_result.code, rclcpp_action::ResultCode::SUCCEEDED);
-  ASSERT_TRUE(arm_result.result->success);
-  EXPECT_EQ(arm_result.result->message, "Vehicle armed");
-}
-
-TEST_F(
-  DroneStateMachineBehavior,
-  DisarmedOffboardReleaseFailureInvalidTelemetryReturnsToInitUntilRestored)
-{
-  enterDisarmedOffboardReleaseFailed();
-
-  fake_px4_->publishInvalidLocalPosition();
-  std::this_thread::sleep_for(100ms);
-  fake_px4_->setOffboard(false);
-  std::this_thread::sleep_for(100ms);
-
-  EXPECT_EQ(sendArmGoal(), nullptr);
-
-  fake_px4_->publishReadyTelemetry();
-  std::shared_ptr<rclcpp_action::ClientGoalHandle<Arm>> arm;
-  ASSERT_TRUE(waitFor([this, &arm]() {
-    arm = sendArmGoal();
-    return arm != nullptr;
-  }, 2s));
-  auto arm_result = waitArmResult(arm);
-  EXPECT_EQ(arm_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  EXPECT_TRUE(disable_result.result->success);
+  EXPECT_EQ(disable_result.result->message, "Offboard disabled");
+  EXPECT_GT(fake_px4_->setModeCount(1.0F, 3.0F), before_position_mode_count);
 }
 
 TEST_F(DroneStateMachineBehavior, DisarmWhileAirborneIsRejectedWithoutLanding)
@@ -1010,7 +953,7 @@ TEST_F(DroneStateMachineBehavior, DisarmWhileAirborneIsRejectedWithoutLanding)
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), before_land_count);
 }
 
-TEST_F(DroneStateMachineBehavior, DisarmWithUnknownLandedStateIsRejected)
+TEST_F(DroneStateMachineBehavior, LostLandedStateStartsRecoveryAndRejectsDisarm)
 {
   publishReadyAndWait();
 
@@ -1026,7 +969,7 @@ TEST_F(DroneStateMachineBehavior, DisarmWithUnknownLandedStateIsRejected)
   EXPECT_EQ(
     fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM),
     before_disarm_count);
-  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+  EXPECT_GT(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
 }
 
 TEST_F(
@@ -1089,7 +1032,7 @@ TEST_F(DroneStateMachineBehavior, EnableOffboardRejectsWhenAlreadyOffboardOrArme
   EXPECT_EQ(sendEnableOffboardGoal(), nullptr);
 }
 
-TEST_F(DroneStateMachineBehavior, EnableOffboardHappyPathEntersHoldWithoutArmOrLand)
+TEST_F(DroneStateMachineBehavior, EnableOffboardHappyPathStaysReadyWithOffboardActive)
 {
   publishReadyAndWait();
 
@@ -1100,6 +1043,11 @@ TEST_F(DroneStateMachineBehavior, EnableOffboardHappyPathEntersHoldWithoutArmOrL
   EXPECT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
   ASSERT_TRUE(result.result->success);
   EXPECT_EQ(result.result->message, "Offboard enabled");
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.state_label == "READY" && heartbeat.offboard && !heartbeat.armed &&
+           heartbeat.can_disable_offboard;
+  }, 2s));
   EXPECT_GT(fake_px4_->setModeCount(1.0F, 6.0F), 0U);
   EXPECT_GT(fake_px4_->positionSetpointCountAtZ(0.0F), 0U);
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
@@ -1252,6 +1200,10 @@ TEST_F(DroneStateMachineBehavior, DisableOffboardHappyPathRequestsPositionMode)
   EXPECT_EQ(disable_result.code, rclcpp_action::ResultCode::SUCCEEDED);
   ASSERT_TRUE(disable_result.result->success);
   EXPECT_EQ(disable_result.result->message, "Offboard disabled");
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.state_label == "READY" && !heartbeat.offboard && heartbeat.can_enable_offboard;
+  }, 2s));
   EXPECT_GT(fake_px4_->setModeCount(1.0F, 3.0F), 0U);
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM), 0U);
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
@@ -1376,7 +1328,7 @@ TEST_F(DroneStateMachineBehavior, OffboardHoldInvalidLocalPositionReturnsToInit)
   }, 500ms));
 }
 
-TEST_F(DroneStateMachineBehavior, OffboardHoldUnexpectedArmStartsLandingRecovery)
+TEST_F(DroneStateMachineBehavior, OffboardHoldUnexpectedGroundArmEntersArmedHold)
 {
   publishReadyAndWait();
 
@@ -1386,9 +1338,12 @@ TEST_F(DroneStateMachineBehavior, OffboardHoldUnexpectedArmStartsLandingRecovery
   ASSERT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
 
   fake_px4_->setArmed(true);
-  EXPECT_TRUE(waitFor([this]() {
-    return fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND) > 0;
+  ASSERT_TRUE(waitFor([this]() {
+    const auto heartbeat = latestHeartbeat();
+    return heartbeat.state_label == "ARMED_HOLD" && heartbeat.armed && heartbeat.offboard &&
+           heartbeat.can_disarm;
   }, 2s));
+  EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
 }
 
 TEST_F(DroneStateMachineBehavior, LandFromDisarmedOffboardHoldIsRejected)

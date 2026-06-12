@@ -19,9 +19,9 @@ current finite local position and yaw, streams that fixed hold target through
 warmup, requests Offboard, and succeeds with `Offboard enabled` when PX4 reports
 Offboard.
 
-After success the node remains in `OFFBOARD_HOLD`, keeps publishing the latched
-hold setpoint, and does not reissue Offboard mode, arm, land, or accept external
-velocity control.
+After success the node remains in `READY` with PX4 reporting Offboard, keeps
+publishing the latched hold setpoint, and does not reissue Offboard mode, arm,
+land, or accept external velocity control.
 
 ## Arm
 
@@ -33,20 +33,21 @@ result: bool success, string message
 feedback: string state, bool armed, bool offboard, float32 elapsed_s
 ```
 
-Accepted from `READY` or disarmed `OFFBOARD_HOLD` only when PX4 status, local
-position, and recent `vehicle_land_detected` telemetry are valid and
-`landed=true` has remained continuous for `landed_confirmation_s`. From `READY`
-the node latches a ground hold target, streams Offboard proof-of-life, requests
-Offboard, then requests arm. From `OFFBOARD_HOLD` it reuses the existing hold
+Accepted from `READY` only when PX4 status, local position, and recent
+`vehicle_land_detected` telemetry are valid and `landed=true` has remained
+continuous for `landed_confirmation_s`. If PX4 is not already Offboard, the node
+latches a ground hold target, streams Offboard proof-of-life, requests Offboard,
+then requests arm. If `READY` is already Offboard, it reuses the existing hold
 target and requests arm without re-requesting Offboard.
 
 The action succeeds as soon as PX4 reports armed. The node then enters
-`ARMED_OFFBOARD_HOLD`, continues publishing the hold setpoint, and starts
+`ARMED_HOLD`, continues publishing the hold setpoint, and starts
 `armed_hold_duration_s`. When that timer expires, the node direct-disarms only
-if landed telemetry is still confirmed, then requests Position mode. PX4 may
+if landed telemetry is still confirmed, then returns to `READY` while keeping
+Offboard active. PX4 may
 disarm earlier due to native PX4 parameters such as `COM_DISARM_PRFLT` or
-`COM_DISARM_LAND`; in that case the node skips its own disarm command and still
-releases Offboard.
+`COM_DISARM_LAND`; in that case the node skips its own disarm command and also
+returns to `READY` with Offboard still active.
 
 ## Disarm
 
@@ -59,18 +60,15 @@ feedback: string state, bool armed, bool landed,
           float32 elapsed_s
 ```
 
-Already-disarmed `READY` and disarmed `OFFBOARD_HOLD` succeed immediately.
-From `ARMED_OFFBOARD_HOLD`, direct disarm is allowed only while PX4 reports armed
-and recent land-detected telemetry has continuously reported landed for
-`landed_confirmation_s`; after disarm the node keeps streaming the hold setpoint
-until PX4 leaves Offboard.
+Direct disarm is accepted only from `ARMED_HOLD` while PX4 reports armed and
+recent land-detected telemetry has continuously reported landed for
+`landed_confirmation_s`; after disarm the node returns to `READY` and keeps
+streaming the hold setpoint while Offboard remains active.
 
 Airborne, landing-active, takeoff-active, or uncertain disarm requests are
 rejected. `Disarm` is not a landing command; clients must use the `Land` action
-or emergency land topic for airborne recovery. If Position-mode release after
-ground disarm times out, the node enters `DISARMED_OFFBOARD_RELEASE_FAILED`,
-keeps safe Offboard hold publications active, and rejects new arm/takeoff
-attempts until explicit recovery.
+or emergency land topic for airborne recovery. Use `DisableOffboard` from
+disarmed `READY` to leave Offboard explicitly.
 
 ## DisableOffboard
 
@@ -82,15 +80,14 @@ result: bool success, string message
 feedback: string state, bool offboard, float32 elapsed_s
 ```
 
-Accepted only from `OFFBOARD_HOLD` when telemetry and local position are valid,
-the vehicle is disarmed, and PX4 is currently Offboard. The node keeps streaming
-the hold setpoint while it retries Position mode requests. It succeeds with
+Accepted only from `READY` when telemetry and local position are valid, the
+vehicle is disarmed, and PX4 is currently Offboard. The node keeps streaming the
+hold setpoint while it retries Position mode requests. It succeeds with
 `Offboard disabled` when PX4 leaves Offboard.
 
 Timeout aborts the action with `disable_offboard request timed out`. If telemetry
-is still valid, the vehicle is disarmed, and PX4 remains Offboard, the state
-returns to `OFFBOARD_HOLD`. Unexpected arming during disable aborts the action
-and starts landing recovery.
+is still valid, the state remains `READY`. Unexpected arming during disable
+aborts the action and starts landing recovery.
 
 ## Takeoff
 
@@ -104,8 +101,8 @@ feedback: string state, float32 current_altitude_m,
           float32 progress
 ```
 
-Accepted from `READY`, or from `OFFBOARD_HOLD` when PX4 is still Offboard and
-disarmed. Goals require valid PX4 telemetry, a disarmed vehicle, finite yaw when
+Accepted from `READY`, including when PX4 is already Offboard and disarmed.
+Goals require valid PX4 telemetry, a disarmed vehicle, finite yaw when
 explicit yaw is requested, and an altitude in
 `[min_takeoff_altitude_m, max_takeoff_altitude_m]`.
 

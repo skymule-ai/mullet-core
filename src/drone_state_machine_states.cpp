@@ -45,8 +45,27 @@ void DroneStateMachine::handleInit(const rclcpp::Time & /*now*/)
   transitionTo(DroneState::kReady, "PX4 state and local position available");
 }
 
-void DroneStateMachine::handleReady(const rclcpp::Time & /*now*/)
+void DroneStateMachine::handleReady(const rclcpp::Time & current_time)
 {
+  if (!px4_->hasVehicleStatus() || !px4_->localPositionValid()) {
+    transitionTo(DroneState::kInit, "ready telemetry invalid");
+    return;
+  }
+  if (px4_->isOffboard()) {
+    if (px4_->isArmed() && !haveActiveTakeoffGoal()) {
+      if (!landedConfirmed(current_time)) {
+        RCLCPP_ERROR(
+          get_logger(), "Vehicle is armed and airborne in READY offboard; starting landing recovery");
+        beginLanding("armed airborne state in ready offboard", true);
+        return;
+      }
+      armed_hold_deadline_ = current_time +
+        rclcpp::Duration::from_seconds(config_.armed_hold_duration_s);
+      transitionTo(DroneState::kArmedHold, "armed hold after PX4 armed in ready offboard");
+      return;
+    }
+    publishHoverSetpoint();
+  }
 }
 
 void DroneStateMachine::handleEnableOffboardRequested(const rclcpp::Time & current_time)
@@ -95,29 +114,8 @@ void DroneStateMachine::handleRequestOffboardOnly(const rclcpp::Time & current_t
   if (px4_->isOffboard()) {
     publishEnableOffboardFeedback(current_time);
     succeedEnableOffboardGoal("Offboard enabled");
-    transitionTo(DroneState::kOffboardHold, "offboard accepted for disarmed hold");
+    transitionTo(DroneState::kReady, "offboard accepted; ready");
   }
-}
-
-void DroneStateMachine::handleOffboardHold(const rclcpp::Time & /*current_time*/)
-{
-  if (!px4_->hasVehicleStatus() || !px4_->localPositionValid()) {
-    RCLCPP_WARN(get_logger(), "Leaving OFFBOARD_HOLD: PX4 telemetry/local position is invalid");
-    transitionTo(DroneState::kInit, "offboard hold telemetry invalid");
-    return;
-  }
-  if (px4_->isArmed() && !haveActiveTakeoffGoal()) {
-    RCLCPP_ERROR(get_logger(), "Vehicle armed unexpectedly in OFFBOARD_HOLD; starting landing recovery");
-    beginLanding("unexpected armed state in offboard hold", true);
-    return;
-  }
-  if (!px4_->isOffboard()) {
-    RCLCPP_WARN(get_logger(), "Leaving OFFBOARD_HOLD: PX4 left offboard mode");
-    transitionTo(DroneState::kReady, "PX4 left offboard hold");
-    return;
-  }
-
-  publishHoverSetpoint();
 }
 
 void DroneStateMachine::handleArmRequested(const rclcpp::Time & current_time)
@@ -164,7 +162,7 @@ void DroneStateMachine::handleArmCommand(const rclcpp::Time & current_time)
   }
   if (!landedConfirmed(current_time)) {
     abortArmGoal("Arm aborted: landed telemetry is no longer confirmed");
-    transitionTo(DroneState::kOffboardHold, "offboard hold after arm landed check failed");
+    transitionTo(DroneState::kReady, "ready after arm landed check failed");
     return;
   }
   if (px4_->isArmed()) {
@@ -172,12 +170,12 @@ void DroneStateMachine::handleArmCommand(const rclcpp::Time & current_time)
     succeedArmGoal("Vehicle armed");
     armed_hold_deadline_ = current_time +
       rclcpp::Duration::from_seconds(config_.armed_hold_duration_s);
-    transitionTo(DroneState::kArmedOffboardHold, "vehicle armed for offboard hold");
+    transitionTo(DroneState::kArmedHold, "vehicle armed for offboard hold");
     return;
   }
   if (phaseTimedOut(current_time, config_.request_arm_timeout_s)) {
     abortArmGoal("arm request timed out");
-    transitionTo(DroneState::kOffboardHold, "offboard hold after arm timeout");
+    transitionTo(DroneState::kReady, "ready offboard after arm timeout");
     return;
   }
   if (state_machine_detail::retryDue(
@@ -188,25 +186,30 @@ void DroneStateMachine::handleArmCommand(const rclcpp::Time & current_time)
   }
 }
 
-void DroneStateMachine::handleArmedOffboardHold(const rclcpp::Time & current_time)
+void DroneStateMachine::handleArmedHold(const rclcpp::Time & current_time)
 {
   if (!px4_->hasVehicleStatus() || !px4_->localPositionValid()) {
-    beginLanding("armed offboard hold telemetry invalid", true);
+    beginLanding("armed hold telemetry invalid", true);
+    return;
+  }
+  if (!px4_->isArmed()) {
+    transitionTo(
+      px4_->localPositionValid() ? DroneState::kReady : DroneState::kInit,
+      px4_->localPositionValid() ? "ready after PX4 disarmed during armed hold" :
+      "waiting for telemetry after PX4 disarmed during armed hold");
     return;
   }
   if (!px4_->isOffboard()) {
     beginLanding("offboard lost during armed hold", true);
     return;
   }
-  publishHoverSetpoint();
-  if (!px4_->isArmed()) {
-    release_offboard_after_disarm_ = false;
-    transitionTo(DroneState::kReleaseOffboardRequest, "PX4 disarmed during armed hold");
+  if (!landedConfirmed(current_time)) {
+    beginLanding("armed hold lost confirmed landed state", true);
     return;
   }
+  publishHoverSetpoint();
   if (armed_hold_deadline_.nanoseconds() != 0 && current_time >= armed_hold_deadline_) {
     if (directDisarmAllowed(current_time)) {
-      release_offboard_after_disarm_ = true;
       transitionTo(DroneState::kDisarmCommand, "armed hold expired");
     } else {
       beginLanding("armed hold expired without confirmed landed state", true);
@@ -216,19 +219,24 @@ void DroneStateMachine::handleArmedOffboardHold(const rclcpp::Time & current_tim
 
 void DroneStateMachine::handleDisarmCommand(const rclcpp::Time & current_time)
 {
-  publishHoverSetpoint();
+  if (px4_->isOffboard()) {
+    publishHoverSetpoint();
+  }
   publishDisarmFeedback(current_time);
 
   if (!px4_->isArmed()) {
     publishDisarmFeedback(current_time);
-    release_offboard_after_disarm_ = false;
-    transitionTo(DroneState::kReleaseOffboardRequest, "vehicle disarmed");
+    succeedDisarmGoal("Vehicle disarmed");
+    transitionTo(
+      px4_->localPositionValid() ? DroneState::kReady : DroneState::kInit,
+      px4_->localPositionValid() ? "ready after disarm" :
+      "waiting for telemetry after disarm");
     return;
   }
   if (!directDisarmAllowed(current_time)) {
     if (haveActiveDisarmGoal()) {
       abortDisarmGoal("disarm aborted: landed telemetry is no longer confirmed");
-      transitionTo(DroneState::kArmedOffboardHold, "armed hold after disarm grounded check failed");
+      transitionTo(DroneState::kArmedHold, "armed hold after disarm grounded check failed");
     } else {
       beginLanding("auto-disarm routed through landing after grounded check failed", true);
     }
@@ -253,8 +261,7 @@ void DroneStateMachine::handleReleaseOffboardRequest(const rclcpp::Time & curren
   publishDisarmFeedback(current_time);
 
   if (!px4_->isOffboard()) {
-    succeedDisarmGoal("Vehicle disarmed and Offboard released");
-    release_offboard_after_disarm_ = false;
+    succeedDisarmGoal("Offboard released");
     transitionTo(
       px4_->localPositionValid() ? DroneState::kReady : DroneState::kInit,
       px4_->localPositionValid() ? "ready after offboard release" :
@@ -265,7 +272,7 @@ void DroneStateMachine::handleReleaseOffboardRequest(const rclcpp::Time & curren
     abortDisarmGoal("position mode release timed out");
     transitionTo(
       DroneState::kDisarmedOffboardReleaseFailed,
-      "PX4 stayed offboard after ground disarm");
+      "PX4 stayed offboard during release request");
     return;
   }
   if (state_machine_detail::retryDue(

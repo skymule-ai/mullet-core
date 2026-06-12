@@ -41,10 +41,9 @@ bool isActiveTakeoffState(DroneState state)
     case DroneState::kEnableOffboardRequested:
     case DroneState::kWarmupOffboardHoldSetpoints:
     case DroneState::kRequestOffboardOnly:
-    case DroneState::kOffboardHold:
     case DroneState::kArmRequested:
     case DroneState::kArmCommand:
-    case DroneState::kArmedOffboardHold:
+    case DroneState::kArmedHold:
     case DroneState::kDisarmCommand:
     case DroneState::kReleaseOffboardRequest:
     case DroneState::kDisarmedOffboardReleaseFailed:
@@ -64,7 +63,7 @@ bool isActiveTakeoffState(DroneState state)
 
 bool isLandActionAllowedFromState(DroneState state)
 {
-  return state == DroneState::kHover || state == DroneState::kCommand ||
+  return state == DroneState::kReady || state == DroneState::kHover || state == DroneState::kCommand ||
          isActiveTakeoffState(state);
 }
 

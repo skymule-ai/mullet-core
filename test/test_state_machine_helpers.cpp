@@ -22,10 +22,9 @@ const std::vector<DroneState> & allStates()
     DroneState::kEnableOffboardRequested,
     DroneState::kWarmupOffboardHoldSetpoints,
     DroneState::kRequestOffboardOnly,
-    DroneState::kOffboardHold,
     DroneState::kArmRequested,
     DroneState::kArmCommand,
-    DroneState::kArmedOffboardHold,
+    DroneState::kArmedHold,
     DroneState::kDisarmCommand,
     DroneState::kReleaseOffboardRequest,
     DroneState::kDisarmedOffboardReleaseFailed,
@@ -116,6 +115,7 @@ TEST(StateMachineHelpers, LandActionAllowedMatchesExpectedStates)
 {
   for (const auto state : allStates()) {
     const bool expected =
+      state == DroneState::kReady ||
       state == DroneState::kHover ||
       state == DroneState::kCommand ||
       isActiveTakeoffState(state);
@@ -129,7 +129,7 @@ TEST(StateMachineHelpers, LandActionAllowedRelationshipDoesNotDrift)
   for (const auto state : allStates()) {
     EXPECT_EQ(
       isLandActionAllowedFromState(state),
-      state == DroneState::kHover || state == DroneState::kCommand ||
+      state == DroneState::kReady || state == DroneState::kHover || state == DroneState::kCommand ||
       isActiveTakeoffState(state));
   }
 }

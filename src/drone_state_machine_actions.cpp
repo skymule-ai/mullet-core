@@ -26,8 +26,7 @@ rclcpp_action::GoalResponse DroneStateMachine::handleTakeoffGoal(
     RCLCPP_WARN(get_logger(), "Rejecting takeoff goal: enable_offboard action is active");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (state_ != DroneState::kReady && state_ != DroneState::kOffboardHold &&
-    state_ != DroneState::kArmedOffboardHold)
+  if (state_ != DroneState::kReady && state_ != DroneState::kArmedHold)
   {
     RCLCPP_WARN(get_logger(), "Rejecting takeoff goal: state is %s", stateName(state_));
     return rclcpp_action::GoalResponse::REJECT;
@@ -40,12 +39,8 @@ rclcpp_action::GoalResponse DroneStateMachine::handleTakeoffGoal(
     RCLCPP_WARN(get_logger(), "Rejecting takeoff goal: PX4 telemetry is not ready");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (px4_->isArmed() && state_ != DroneState::kArmedOffboardHold) {
+  if (px4_->isArmed() && state_ != DroneState::kArmedHold) {
     RCLCPP_WARN(get_logger(), "Rejecting takeoff goal: vehicle is already armed");
-    return rclcpp_action::GoalResponse::REJECT;
-  }
-  if (state_ == DroneState::kOffboardHold && !px4_->isOffboard()) {
-    RCLCPP_WARN(get_logger(), "Rejecting takeoff goal: OFFBOARD_HOLD is no longer offboard");
     return rclcpp_action::GoalResponse::REJECT;
   }
   if (!state_machine_detail::finiteInRange(
@@ -81,8 +76,8 @@ rclcpp_action::CancelResponse DroneStateMachine::handleTakeoffCancel(
 
 void DroneStateMachine::handleTakeoffAccepted(const std::shared_ptr<GoalHandleTakeoff> goal_handle)
 {
-  const bool from_offboard_hold = state_ == DroneState::kOffboardHold;
-  const bool from_armed_offboard_hold = state_ == DroneState::kArmedOffboardHold;
+  const bool from_ready_offboard = state_ == DroneState::kReady && px4_->isOffboard();
+  const bool from_armed_hold = state_ == DroneState::kArmedHold;
   if (!action_lifecycle_->acceptTakeoffGoal(goal_handle)) {
     action_lifecycle_->abortRejectedTakeoff(
       goal_handle, "Takeoff rejected: another takeoff is active");
@@ -101,16 +96,16 @@ void DroneStateMachine::handleTakeoffAccepted(const std::shared_ptr<GoalHandleTa
     transitionTo(next_state, reason);
     return;
   }
-  if (from_offboard_hold) {
+  if (from_ready_offboard) {
     publishTakeoffSetpoint();
-    transitionTo(DroneState::kRequestArm, "takeoff action accepted from offboard hold");
+    transitionTo(DroneState::kRequestArm, "takeoff action accepted from ready offboard");
     return;
   }
-  if (from_armed_offboard_hold) {
+  if (from_armed_hold) {
     armed_hold_deadline_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
     takeoff_arm_requested_ = true;
     publishTakeoffSetpoint();
-    transitionTo(DroneState::kTakeoff, "takeoff action accepted from armed offboard hold");
+    transitionTo(DroneState::kTakeoff, "takeoff action accepted from armed hold");
     return;
   }
   transitionTo(DroneState::kTakeoffRequested, "takeoff action accepted");
@@ -132,12 +127,6 @@ rclcpp_action::GoalResponse DroneStateMachine::handleLandGoal(
   }
   if (haveActiveArmGoal() || haveActiveDisarmGoal()) {
     RCLCPP_WARN(get_logger(), "Rejecting land goal: arm/disarm action is active");
-    return rclcpp_action::GoalResponse::REJECT;
-  }
-  if (state_ == DroneState::kOffboardHold && !px4_->isArmed()) {
-    RCLCPP_WARN(
-      get_logger(),
-      "Land rejected: vehicle is disarmed in OFFBOARD hold; no landing action is required.");
     return rclcpp_action::GoalResponse::REJECT;
   }
   if (haveActiveEnableOffboardGoal()) {
@@ -164,6 +153,10 @@ rclcpp_action::GoalResponse DroneStateMachine::handleLandGoal(
   if (!interrupting_takeoff && !px4_->isArmed()) {
     RCLCPP_WARN(
       get_logger(), "Rejecting land goal: vehicle is not armed; state/telemetry may be stale");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+  if (!interrupting_takeoff && landedConfirmed(now())) {
+    RCLCPP_WARN(get_logger(), "Rejecting land goal: vehicle is already confirmed landed; use disarm instead");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
@@ -274,7 +267,7 @@ rclcpp_action::GoalResponse DroneStateMachine::handleDisableOffboardGoal(
   (void)uuid;
   (void)goal;
 
-  if (state_ != DroneState::kOffboardHold) {
+  if (state_ != DroneState::kReady) {
     RCLCPP_WARN(get_logger(), "Rejecting disable_offboard goal: state is %s", stateName(state_));
     return rclcpp_action::GoalResponse::REJECT;
   }
@@ -334,14 +327,14 @@ rclcpp_action::GoalResponse DroneStateMachine::handleArmGoal(
     RCLCPP_WARN(get_logger(), "Rejecting arm goal: another action is active");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (state_ == DroneState::kArmedOffboardHold) {
+  if (state_ == DroneState::kArmedHold) {
     if (px4_->isArmed() && landedConfirmed(current_time)) {
       return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
     RCLCPP_WARN(get_logger(), "Rejecting repeat arm goal: armed hold is not confirmed landed");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (state_ != DroneState::kReady && state_ != DroneState::kOffboardHold) {
+  if (state_ != DroneState::kReady) {
     RCLCPP_WARN(get_logger(), "Rejecting arm goal: state is %s", stateName(state_));
     return rclcpp_action::GoalResponse::REJECT;
   }
@@ -355,10 +348,6 @@ rclcpp_action::GoalResponse DroneStateMachine::handleArmGoal(
   }
   if (!landedConfirmed(current_time)) {
     RCLCPP_WARN(get_logger(), "Rejecting arm goal: landed telemetry is not confirmed");
-    return rclcpp_action::GoalResponse::REJECT;
-  }
-  if (state_ == DroneState::kOffboardHold && !px4_->isOffboard()) {
-    RCLCPP_WARN(get_logger(), "Rejecting arm goal: OFFBOARD_HOLD is no longer offboard");
     return rclcpp_action::GoalResponse::REJECT;
   }
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -380,20 +369,20 @@ void DroneStateMachine::handleArmAccepted(const std::shared_ptr<GoalHandleArm> g
     action_lifecycle_->abortRejectedArm(goal_handle, "Arm rejected: another arm action is active");
     return;
   }
-  if (state_ == DroneState::kArmedOffboardHold) {
+  if (state_ == DroneState::kArmedHold) {
     armed_hold_deadline_ = now() + rclcpp::Duration::from_seconds(config_.armed_hold_duration_s);
     succeedArmGoal("Vehicle already armed; armed hold extended");
     return;
   }
-  arm_started_from_offboard_hold_ = state_ == DroneState::kOffboardHold;
-  if (!arm_started_from_offboard_hold_ && !latchOffboardHoldTarget()) {
+  arm_started_from_ready_offboard_ = state_ == DroneState::kReady && px4_->isOffboard();
+  if (!arm_started_from_ready_offboard_ && !latchOffboardHoldTarget()) {
     abortArmGoal("Arm rejected: local position invalid while latching hold target");
     transitionTo(DroneState::kInit, "waiting for telemetry after failed arm target latch");
     return;
   }
   transitionTo(
-    arm_started_from_offboard_hold_ ? DroneState::kArmCommand : DroneState::kArmRequested,
-    arm_started_from_offboard_hold_ ? "arm action accepted from offboard hold" :
+    arm_started_from_ready_offboard_ ? DroneState::kArmCommand : DroneState::kArmRequested,
+    arm_started_from_ready_offboard_ ? "arm action accepted from ready offboard" :
     "arm action accepted");
 }
 
@@ -413,15 +402,13 @@ rclcpp_action::GoalResponse DroneStateMachine::handleDisarmGoal(
     RCLCPP_WARN(get_logger(), "Rejecting disarm goal: offboard release is in progress or failed");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if ((state_ == DroneState::kReady || state_ == DroneState::kOffboardHold) && !px4_->isArmed()) {
-    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-  }
-  if (state_ == DroneState::kArmedOffboardHold && directDisarmAllowed(now())) {
+  const auto current_time = now();
+  if (state_ == DroneState::kArmedHold && directDisarmAllowed(current_time)) {
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
   }
   RCLCPP_WARN(
     get_logger(),
-    "Rejecting disarm goal: state=%s is not confirmed landed for direct disarm; use land instead",
+    "Rejecting disarm goal: state=%s is not ARMED_HOLD with confirmed landed telemetry; use land instead",
     stateName(state_));
   return rclcpp_action::GoalResponse::REJECT;
 }
@@ -445,15 +432,11 @@ void DroneStateMachine::handleDisarmAccepted(const std::shared_ptr<GoalHandleDis
   }
 
   const auto current_time = now();
-  if ((state_ == DroneState::kReady || state_ == DroneState::kOffboardHold) && !px4_->isArmed()) {
-    succeedDisarmGoal("Vehicle already disarmed");
-    return;
-  }
-  if (state_ == DroneState::kArmedOffboardHold && directDisarmAllowed(current_time)) {
+  if (state_ == DroneState::kArmedHold && directDisarmAllowed(current_time)) {
     transitionTo(DroneState::kDisarmCommand, "disarm action accepted from armed hold");
     return;
   }
-  abortDisarmGoal("Disarm rejected: vehicle is not confirmed landed; use land instead");
+  abortDisarmGoal("Disarm rejected: vehicle is not in ARMED_HOLD with confirmed landed telemetry");
 }
 
 void DroneStateMachine::publishTakeoffFeedback(float progress)
@@ -688,10 +671,6 @@ void DroneStateMachine::finishDisableOffboardAttempt(const char * reason)
   resetVehicleCommandRetryTimer();
   if (!px4_->localPositionValid()) {
     transitionTo(DroneState::kInit, reason);
-    return;
-  }
-  if (!px4_->isArmed() && px4_->isOffboard()) {
-    transitionTo(DroneState::kOffboardHold, reason);
     return;
   }
   transitionTo(DroneState::kReady, reason);

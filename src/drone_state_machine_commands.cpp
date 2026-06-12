@@ -23,8 +23,9 @@ constexpr float kCommandModeTolerance = 1e-3F;
 void DroneStateMachine::onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
   if (state_ == DroneState::kCancelingToLand || state_ == DroneState::kLanding ||
-    state_ == DroneState::kOffboardHold || state_ == DroneState::kArmRequested ||
-    state_ == DroneState::kArmCommand || state_ == DroneState::kArmedOffboardHold ||
+    (state_ == DroneState::kReady && px4_->isOffboard() && !px4_->isArmed()) ||
+    state_ == DroneState::kArmRequested ||
+    state_ == DroneState::kArmCommand || state_ == DroneState::kArmedHold ||
     state_ == DroneState::kDisarmCommand || state_ == DroneState::kReleaseOffboardRequest ||
     state_ == DroneState::kDisarmedOffboardReleaseFailed ||
     state_ == DroneState::kDisableOffboardRequested ||

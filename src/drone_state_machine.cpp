@@ -300,12 +300,12 @@ void DroneStateMachine::publishHeartbeat()
   }
 
   msg.can_takeoff = canTakeoff();
-  msg.can_land = canLand();
+  msg.can_land = canLand(current_time);
   msg.can_enable_offboard = canEnableOffboard();
   msg.can_disable_offboard = canDisableOffboard();
   msg.can_arm = canArm(current_time);
   msg.can_disarm = canDisarm(current_time);
-  msg.can_emergency_land = canEmergencyLand();
+  msg.can_emergency_land = canEmergencyLand(current_time);
 
   heartbeat_pub_->publish(msg);
 }
@@ -319,15 +319,15 @@ void DroneStateMachine::controlTick()
     command_buffer_.land_requested = false;
     if (state_ == DroneState::kDisarmed) {
       RCLCPP_WARN(get_logger(), "Ignoring emergency land request: vehicle is already disarmed");
-    } else if (state_ == DroneState::kOffboardHold && !px4_->isArmed()) {
+    } else if (state_ == DroneState::kReady && px4_->isOffboard() && !px4_->isArmed()) {
       RCLCPP_WARN(
-        get_logger(), "Ignoring emergency land request: vehicle is disarmed in OFFBOARD_HOLD");
+        get_logger(), "Ignoring emergency land request: vehicle is disarmed in READY offboard");
     } else if (haveActiveEnableOffboardGoal()) {
       abortEnableOffboardGoal("EnableOffboard preempted by emergency land request");
       if (px4_->isOffboard() && px4_->localPositionValid()) {
         finishEnableOffboardAttempt(
-          DroneState::kOffboardHold,
-          "offboard hold after emergency land preempted enable_offboard");
+          DroneState::kReady,
+          "ready offboard after emergency land preempted enable_offboard");
       } else {
         finishEnableOffboardAttempt(
           px4_->localPositionValid() ? DroneState::kReady : DroneState::kInit,
@@ -377,7 +377,6 @@ void DroneStateMachine::controlTick()
   if (action_lifecycle_->armCancelRequested() && haveActiveArmGoal()) {
     cancelArmGoal("Arm canceled before completion");
     if (!px4_->isArmed() && px4_->isOffboard()) {
-      release_offboard_after_disarm_ = false;
       transitionTo(DroneState::kReleaseOffboardRequest, "arm canceled; release offboard");
     } else {
       transitionTo(
@@ -391,7 +390,7 @@ void DroneStateMachine::controlTick()
     if (state_ == DroneState::kDisarmCommand) {
       armed_hold_deadline_ = current_time +
         rclcpp::Duration::from_seconds(config_.armed_hold_duration_s);
-      transitionTo(DroneState::kArmedOffboardHold, "disarm canceled");
+      transitionTo(DroneState::kArmedHold, "disarm canceled");
     }
   }
 
@@ -411,17 +410,14 @@ void DroneStateMachine::controlTick()
     case DroneState::kRequestOffboardOnly:
       handleRequestOffboardOnly(current_time);
       break;
-    case DroneState::kOffboardHold:
-      handleOffboardHold(current_time);
-      break;
     case DroneState::kArmRequested:
       handleArmRequested(current_time);
       break;
     case DroneState::kArmCommand:
       handleArmCommand(current_time);
       break;
-    case DroneState::kArmedOffboardHold:
-      handleArmedOffboardHold(current_time);
+    case DroneState::kArmedHold:
+      handleArmedHold(current_time);
       break;
     case DroneState::kDisarmCommand:
       handleDisarmCommand(current_time);

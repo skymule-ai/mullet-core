@@ -46,10 +46,9 @@ READY
 ENABLE_OFFBOARD_REQUESTED
 WARMUP_OFFBOARD_HOLD_SETPOINTS
 REQUEST_OFFBOARD_ONLY
-OFFBOARD_HOLD
 ARM_REQUESTED
 ARM_COMMAND
-ARMED_OFFBOARD_HOLD
+ARMED_HOLD
 DISARM_COMMAND
 RELEASE_OFFBOARD_REQUEST
 DISARMED_OFFBOARD_RELEASE_FAILED
@@ -79,16 +78,14 @@ Ground arming is available through `mullet_interfaces/action/Arm`. It requires v
 PX4 status, local position, and recent `vehicle_land_detected.landed=true`
 telemetry continuously confirmed for `landed_confirmation_s`. From `READY`, the
 node streams the existing safe Offboard proof-of-life pattern before requesting
-Offboard and arm. From disarmed `OFFBOARD_HOLD`, it arms against the existing
-hold target without re-requesting Offboard.
+Offboard and arm. If `READY` is already disarmed Offboard, it arms against the
+existing hold target without re-requesting Offboard.
 
-`mullet_interfaces/action/Disarm` direct-disarms only from confirmed landed
-`ARMED_OFFBOARD_HOLD`. Airborne or uncertain requests are rejected; use the
+`mullet_interfaces/action/Disarm` direct-disarms only from `ARMED_HOLD` while the
+vehicle is armed and confirmed landed. Airborne or uncertain requests are rejected; use the
 `Land` action or emergency land topic to land. After ground disarm, the node
-keeps publishing the safe hold setpoint while requesting Position mode. If PX4
-refuses to leave Offboard before
-`request_position_mode_timeout_s`, the state becomes
-`DISARMED_OFFBOARD_RELEASE_FAILED`.
+keeps publishing the safe hold setpoint and remains in Offboard. Use the
+`disable_offboard` action to explicitly request Position mode after disarm.
 
 ## EnableOffboard Action
 
@@ -103,13 +100,13 @@ feedback: state, offboard, elapsed_s
 
 Goals are accepted only from `READY`, with valid PX4 telemetry/local position, a disarmed vehicle, and PX4 not already reporting OFFBOARD. The action latches the current finite local position and yaw once, streams that fixed hold target through warmup, requests OFFBOARD, and succeeds with `Offboard enabled` once PX4 reports OFFBOARD.
 
-After success, the node remains in `OFFBOARD_HOLD` as a disarmed pre-arm state. It keeps publishing the latched hold setpoint and proof-of-life, but it does not reissue `setOffboardMode()`, arm, land, or accept external velocity control. If PX4 leaves OFFBOARD, the node exits `OFFBOARD_HOLD`; if telemetry/local position becomes invalid, it returns to `INIT`; if PX4 becomes armed unexpectedly without an active takeoff goal, it enters the existing landing recovery path.
+After success, the node remains in `READY` with PX4 reporting OFFBOARD. It keeps publishing the latched hold setpoint and proof-of-life, but it does not reissue `setOffboardMode()`, arm, land, or accept external velocity control. If PX4 leaves OFFBOARD, the node remains `READY`; if telemetry/local position becomes invalid, it returns to `INIT`; if PX4 becomes armed unexpectedly while airborne without an active takeoff goal, it enters landing recovery.
 
-A later takeoff action may start from `OFFBOARD_HOLD` when PX4 is still OFFBOARD and disarmed. In that case the takeoff target replaces the hold target before the node sends any arm command.
+A later takeoff action may start from `READY` when PX4 is still OFFBOARD and disarmed. In that case the takeoff target replaces the hold target before the node sends any arm command.
 
 ## DisableOffboard Action
 
-Disarmed pre-arm OFFBOARD hold can be exited explicitly through the `disable_offboard` action:
+Disarmed pre-arm OFFBOARD can be exited explicitly through the `disable_offboard` action:
 
 ```text
 mullet_interfaces/action/DisableOffboard
@@ -118,9 +115,9 @@ result: success, message
 feedback: state, offboard, elapsed_s
 ```
 
-Goals are accepted only from `OFFBOARD_HOLD`, with valid PX4 telemetry/local position, a disarmed vehicle, and PX4 currently reporting OFFBOARD. The action keeps publishing the latched hold setpoint while it retries Position mode requests. It succeeds with `Offboard disabled` once PX4 reports it has left OFFBOARD, then returns the node to `READY`.
+Goals are accepted only from `READY` with valid PX4 telemetry/local position, a disarmed vehicle, and PX4 currently reporting OFFBOARD. The action keeps publishing the latched hold setpoint while it retries Position mode requests. It succeeds with `Offboard disabled` once PX4 reports it has left OFFBOARD, then remains in `READY`.
 
-If PX4 does not leave OFFBOARD before `disable_offboard_timeout_s`, the action aborts with `disable_offboard request timed out` and the node returns to `OFFBOARD_HOLD` when telemetry is still valid, the vehicle is disarmed, and PX4 remains OFFBOARD. Cancellation before completion returns to `OFFBOARD_HOLD`, `READY`, or `INIT` based on current PX4 telemetry and mode. If the vehicle becomes armed unexpectedly during disable, the action aborts and the node enters landing recovery.
+If PX4 does not leave OFFBOARD before `disable_offboard_timeout_s`, the action aborts with `disable_offboard request timed out` and the node remains `READY` when telemetry is still valid. Cancellation before completion returns to `READY` or `INIT` based on current PX4 telemetry. If the vehicle becomes armed unexpectedly during disable, the action aborts and the node enters landing recovery.
 
 ## Takeoff Action
 
@@ -133,7 +130,7 @@ result: success, message
 feedback: state, current_altitude_m, target_altitude_m, altitude_error_m, progress
 ```
 
-Goals are accepted from `READY`, or from `OFFBOARD_HOLD` when PX4 is still OFFBOARD and disarmed. Goals require valid PX4 telemetry, a disarmed vehicle, finite yaw when requested, and an altitude inside `min_takeoff_altitude_m` / `max_takeoff_altitude_m`.
+Goals are accepted from `READY`, including `READY` while PX4 is already OFFBOARD and disarmed. Goals require valid PX4 telemetry, a disarmed vehicle, finite yaw when requested, and an altitude inside `min_takeoff_altitude_m` / `max_takeoff_altitude_m`.
 
 Explicit-yaw goals (`use_current_yaw=false`) complete only after the vehicle is within
 `takeoff_yaw_tolerance_rad` of the requested yaw while altitude and vertical velocity
@@ -155,7 +152,7 @@ feedback: state, armed, elapsed_s
 
 Land action goals are accepted from `HOVER` or `COMMAND` when PX4 reports the vehicle armed. They are also accepted during an active takeoff in `TAKEOFF_REQUESTED`, `WARMUP_SETPOINTS`, `REQUEST_OFFBOARD`, `REQUEST_ARM`, or `TAKEOFF`. A land action preempts the active takeoff goal immediately. If no arm request has been sent and PX4 is already disarmed, the land action succeeds without sending `NAV_LAND`; after an arm request or once armed, the node enters `LANDING` and keeps retrying `NAV_LAND` until PX4 reports disarmed. Once accepted, landing is non-cancelable: external velocity commands are ignored and takeoff goals are rejected.
 
-Land action goals from disarmed `OFFBOARD_HOLD` are rejected because no landing action is required.
+Land action goals from disarmed grounded `READY` are rejected because no landing action is required.
 
 The action succeeds with `Vehicle disarmed after landing` only after PX4 reports disarmed. If `landing_timeout_s` expires while still armed, the action aborts with `Landing timed out while vehicle is still armed`, but the state machine remains in `LANDING` and continues retrying `NAV_LAND` until disarm/recovery.
 
@@ -259,7 +256,7 @@ ros2 action send_goal /px4_1/land mullet_interfaces/action/Land "{}" --feedback
 | `hover_settle_time_s` | float | `1.0` | Duration altitude, velocity, and yaw must be settled before completion |
 | `armed_hold_duration_s` | float | `5.0` | Node-owned armed-on-ground hold before requesting disarm; PX4 may disarm earlier |
 | `request_disarm_timeout_s` | float | `5.0` | Timeout while waiting for PX4 to report disarmed after direct ground disarm |
-| `request_position_mode_timeout_s` | float | `5.0` | Timeout while waiting for PX4 to leave Offboard after ground disarm |
+| `request_position_mode_timeout_s` | float | `5.0` | Timeout while waiting for PX4 to leave Offboard during explicit release/recovery |
 | `landed_confirmation_s` | float | `0.5` | Continuous landed telemetry required for ground arm/direct disarm |
 | `max_vx_ned_mps` | float | `1.0` | External command clamp for NED X velocity |
 | `max_vy_ned_mps` | float | `1.0` | External command clamp for NED Y velocity |
