@@ -75,7 +75,11 @@ bool DroneStateMachine::landedConfirmed(const rclcpp::Time & current_time) const
 
 bool DroneStateMachine::directDisarmAllowed(const rclcpp::Time & current_time) const
 {
-  return px4_->hasVehicleStatus() && px4_->isArmed() && landedConfirmed(current_time);
+  if (!px4_->hasVehicleStatus() || !px4_->isArmed()) {
+    return false;
+  }
+  const double max_age_s = std::min(5.0, config_.landed_confirmation_s + 0.5);
+  return !px4_->confirmedAirborne(current_time, max_age_s);
 }
 
 const char * DroneStateMachine::stateName(DroneState state)

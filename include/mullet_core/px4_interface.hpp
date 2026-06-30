@@ -37,6 +37,7 @@ public:
   bool hasLandDetected() const;
   bool landDetectedRecent(const rclcpp::Time & now, double max_age_s) const;
   bool isLanded() const;
+  bool confirmedAirborne(const rclcpp::Time & now, double max_age_s) const;
   bool landedContinuouslyFor(const rclcpp::Time & now, double duration_s, double max_age_s) const;
   bool isArmed() const;
   bool isOffboard() const;

@@ -156,6 +156,11 @@ bool Px4Interface::isLanded() const
   return has_land_detected_ && latest_land_detected_.landed;
 }
 
+bool Px4Interface::confirmedAirborne(const rclcpp::Time & now, double max_age_s) const
+{
+  return hasLandDetected() && landDetectedRecent(now, max_age_s) && !latest_land_detected_.landed;
+}
+
 bool Px4Interface::landedContinuouslyFor(
   const rclcpp::Time & current_time, double duration_s, double max_age_s) const
 {
