@@ -38,8 +38,16 @@ colcon test-result --verbose
 ## Coverage Areas
 
 - Vehicle instance bounds and `target_system` mapping.
-- Helper behavior such as retry timing, angle wrapping, and state predicates.
-- Action behavior around takeoff, landing, cancellation, timeouts, Offboard hold,
-  DisableOffboard, and emergency land preemption.
-- Launch parsing for explicit instance lists, duplicate rejection, malformed
-  tokens, and offset ranges.
+- Helper behavior: retry timing, angle wrapping, and the local-to-WGS84 projection.
+- The operator workflow end to end: takeoff, `start_mission`, `hold`, return
+  home, land, and the heartbeat fields each step publishes (state, active action,
+  capability flags, global position).
+- Takeoff cancellation and failure on either side of the arm request, Land
+  preempting a takeoff, committed Land cancellation rejection, and landing timeout.
+- PX4 overrides: external disarm returns to `IDLE`, Offboard loss drops to
+  `HOLD` without landing, and a stale `MISSION` stream holds in place.
+- Launch parsing of the packaged YAML (`vehicle_instance`, namespace prefix).
+
+There is no ROS 2 on a plain host checkout; the SITL image
+(`ghcr.io/skymule-ai/px4-sitl`) has ROS and a built `px4_msgs` underlay in the
+sibling `mullet_sitl_sim/ws`.

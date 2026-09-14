@@ -1,8 +1,7 @@
-#include "drone_state_machine_helpers.hpp"
+#include "flight/detail/helpers.hpp"
 
 #include <cmath>
 #include <limits>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -13,39 +12,6 @@ namespace
 
 constexpr float kPi = 3.14159265358979323846F;
 constexpr float kTolerance = 1e-6F;
-
-const std::vector<DroneState> & allStates()
-{
-  static const std::vector<DroneState> states{
-    DroneState::kInit,
-    DroneState::kReady,
-    DroneState::kEnableOffboardRequested,
-    DroneState::kWarmupOffboardHoldSetpoints,
-    DroneState::kRequestOffboardOnly,
-    DroneState::kOffboardHold,
-    DroneState::kArmRequested,
-    DroneState::kArmCommand,
-    DroneState::kArmedOffboardHold,
-    DroneState::kDisarmCommand,
-    DroneState::kReleaseOffboardRequest,
-    DroneState::kDisarmedOffboardReleaseFailed,
-    DroneState::kDisableOffboardRequested,
-    DroneState::kTakeoffRequested,
-    DroneState::kWarmupSetpoints,
-    DroneState::kRequestOffboard,
-    DroneState::kRequestArm,
-    DroneState::kTakeoff,
-    DroneState::kHover,
-    DroneState::kCommand,
-    DroneState::kCancelingToLand,
-    DroneState::kLanding,
-    DroneState::kTakeoffFailed,
-    DroneState::kTakeoffCanceled,
-    DroneState::kFailsafeHold,
-    DroneState::kDisarmed,
-  };
-  return states;
-}
 
 TEST(StateMachineHelpers, RetryDueAcceptsZeroLastTime)
 {
@@ -98,40 +64,28 @@ TEST(StateMachineHelpers, WrapPiOutputUsesNegativePiExclusivePositivePiInclusive
   }
 }
 
-TEST(StateMachineHelpers, ActiveTakeoffStateMatchesExpectedStates)
+TEST(StateMachineHelpers, LocalToGlobalAtOriginIsTheEkfOrigin)
 {
-  for (const auto state : allStates()) {
-    const bool expected =
-      state == DroneState::kTakeoffRequested ||
-      state == DroneState::kWarmupSetpoints ||
-      state == DroneState::kRequestOffboard ||
-      state == DroneState::kRequestArm ||
-      state == DroneState::kTakeoff;
+  const auto global = localToGlobal(47.0, 8.0, 400.0, 0.0, 0.0, 0.0);
 
-    EXPECT_EQ(isActiveTakeoffState(state), expected);
-  }
+  EXPECT_DOUBLE_EQ(global.lat_deg, 47.0);
+  EXPECT_DOUBLE_EQ(global.lon_deg, 8.0);
+  EXPECT_DOUBLE_EQ(global.alt_m, 400.0);
 }
 
-TEST(StateMachineHelpers, LandActionAllowedMatchesExpectedStates)
+TEST(StateMachineHelpers, LocalToGlobalMovesNorthEastAndUp)
 {
-  for (const auto state : allStates()) {
-    const bool expected =
-      state == DroneState::kHover ||
-      state == DroneState::kCommand ||
-      isActiveTakeoffState(state);
+  // 111.19492664 m is 0.001 degrees of arc on the 6371 km sphere; z is down, so -10 m is up.
+  const auto north = localToGlobal(47.0, 8.0, 400.0, 111.19492664, 0.0, -10.0);
+  EXPECT_NEAR(north.lat_deg, 47.001, 1e-9);
+  EXPECT_NEAR(north.lon_deg, 8.0, 1e-12);
+  EXPECT_NEAR(north.alt_m, 410.0, 1e-9);
 
-    EXPECT_EQ(isLandActionAllowedFromState(state), expected);
-  }
-}
-
-TEST(StateMachineHelpers, LandActionAllowedRelationshipDoesNotDrift)
-{
-  for (const auto state : allStates()) {
-    EXPECT_EQ(
-      isLandActionAllowedFromState(state),
-      state == DroneState::kHover || state == DroneState::kCommand ||
-      isActiveTakeoffState(state));
-  }
+  // The same eastward distance spans twice the longitude at 60 degrees as at the equator.
+  const auto east_equator = localToGlobal(0.0, 0.0, 0.0, 0.0, 1000.0, 0.0);
+  const auto east_60 = localToGlobal(60.0, 0.0, 0.0, 0.0, 1000.0, 0.0);
+  EXPECT_NEAR(east_60.lon_deg, 2.0 * east_equator.lon_deg, 1e-9);
+  EXPECT_NEAR(east_60.lat_deg, 60.0, 1e-12);
 }
 
 }  // namespace

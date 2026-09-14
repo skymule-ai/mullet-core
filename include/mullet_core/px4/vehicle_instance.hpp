@@ -1,5 +1,5 @@
-#ifndef MULLET_CORE_VEHICLE_INSTANCE_HPP_
-#define MULLET_CORE_VEHICLE_INSTANCE_HPP_
+#ifndef MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_
+#define MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_
 
 #include <cstdint>
 #include <stdexcept>
@@ -8,9 +8,17 @@
 namespace mullet_core
 {
 
+// Inclusive bounds for PX4 vehicle instance IDs.
 constexpr int kMinVehicleInstance = 0;
 constexpr int kMaxVehicleInstance = 254;
 
+// Validates that an instance can map to a PX4 system ID.
+//
+// Args:
+//   vehicle_instance: Zero-based PX4 vehicle instance.
+//
+// Throws:
+//   std::out_of_range: The instance is outside [kMinVehicleInstance, kMaxVehicleInstance].
 inline void validateVehicleInstance(int vehicle_instance)
 {
   if (vehicle_instance < kMinVehicleInstance || vehicle_instance > kMaxVehicleInstance) {
@@ -21,6 +29,16 @@ inline void validateVehicleInstance(int vehicle_instance)
   }
 }
 
+// Maps a valid vehicle instance to its PX4 target system ID.
+//
+// Args:
+//   vehicle_instance: Zero-based PX4 vehicle instance.
+//
+// Returns:
+//   The target system ID in [1, 255].
+//
+// Throws:
+//   std::out_of_range: The instance is outside [kMinVehicleInstance, kMaxVehicleInstance].
 inline std::uint8_t targetSystemFromVehicleInstance(int vehicle_instance)
 {
   validateVehicleInstance(vehicle_instance);
@@ -29,4 +47,4 @@ inline std::uint8_t targetSystemFromVehicleInstance(int vehicle_instance)
 
 }  // namespace mullet_core
 
-#endif  // MULLET_CORE_VEHICLE_INSTANCE_HPP_
+#endif  // MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_
