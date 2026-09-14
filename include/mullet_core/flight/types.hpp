@@ -16,14 +16,20 @@ enum class DroneState : std::uint8_t
   kIdle,        // On the ground, or otherwise not under supervisor control.
   kTransition,  // Takeoff, land, or return home in progress.
   kHold,        // Airborne, holding a latched position.
-  kMission,     // Airborne, following the external velocity command stream.
+  kMission,     // Airborne, following the external mission command stream.
 };
 
-// Latest externally received horizontal velocity command in NED coordinates.
-struct VelocityCommand
+// Latest valid mullet_interfaces/msg/MissionCommand, horizontal axes only, in NED. `mode` is
+// one of its mode constants; the acceleration is NaN when a VELOCITY command has no
+// feedforward, and the yaw is NaN when the command leaves heading to mullet_core.
+struct LatchedCommand
 {
+  std::uint8_t mode{0};
   float vx_ned_mps{0.0F};
   float vy_ned_mps{0.0F};
+  float ax_ned_mps2{0.0F};
+  float ay_ned_mps2{0.0F};
+  float yaw_rad{0.0F};
   rclcpp::Time stamp{};
   bool valid{false};
 };
@@ -40,12 +46,13 @@ struct ControlConfig
   double heartbeat_rate_hz{10.0};                // Paddock heartbeat publish rate; clamped to >= 1 Hz.
   double offboard_warmup_s{1.0};                // Setpoints streamed before requesting OFFBOARD.
   double command_retry_interval_s{1.0};         // Minimum gap between repeated PX4 VehicleCommand retries.
-  double command_timeout_s{0.25};               // Max age before an external velocity command goes stale.
+  double command_timeout_s{0.25};               // Max age before an external mission command goes stale.
   double takeoff_acceptance_m{0.25};            // Altitude tolerance combined with hover tolerance for takeoffSettled().
   double takeoff_yaw_tolerance_rad{0.174533};   // ~10 degrees; max yaw error for a fixed-yaw takeoff to settle.
   double hover_yaw_rad{0.0};                    // Fallback hold yaw if current heading is non-finite.
   double max_vx_ned_mps{1.0};                   // Clamp applied to MISSION vx commands.
   double max_vy_ned_mps{1.0};                   // Clamp applied to MISSION vy commands.
+  double max_accel_ned_mps2{3.0};               // Per-axis clamp applied to MISSION ax/ay commands.
   double timing_log_period_s{1.0};              // Interval between periodic tick-jitter log lines.
   double min_takeoff_altitude_m{0.5};           // Lower bound enforced on Takeoff goal altitude_m.
   double max_takeoff_altitude_m{10.0};          // Upper bound enforced on Takeoff goal altitude_m.

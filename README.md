@@ -18,7 +18,7 @@ PX4 remains the hard real-time flight controller. It owns attitude stabilization
 
 `mullet_core` is a deterministic soft real-time offboard supervisor. It owns takeoff, land, and return-home sequencing, continuous offboard proof-of-life publication, setpoint streaming, mode/arm/land commands, and external command validation. It never fights PX4: an external disarm or a switch out of Offboard ends whatever it was doing.
 
-High-level planners, mission generation, optimization, and expensive diagnostics should run in separate nodes, not inside this control loop. A mission node drives the drone by publishing velocity commands on `command` while the state is `MISSION`.
+High-level planners, mission generation, optimization, and expensive diagnostics should run in separate nodes, not inside this control loop. A mission node drives the drone by publishing `MissionCommand` setpoints on `command` while the state is `MISSION`.
 
 ## Runtime Architecture
 
@@ -102,13 +102,12 @@ real once `buildHeartbeatMessage()` assigns it, and this node owns the
 
 ## External Commands
 
-`MISSION` follows velocity commands on `command_topic` in a compatibility format:
+`MISSION` follows `mullet_interfaces/msg/MissionCommand` on `command_topic`. Its `mode` names what PX4 tracks:
 
-```text
-std_msgs/msg/Float32MultiArray [vx_ned_mps, vy_ned_mps, mode]
-```
+- `VELOCITY`: horizontal NED velocity, clamped by `max_vx_ned_mps`/`max_vy_ned_mps`, with an optional acceleration feedforward (both axes or neither).
+- `ACCELERATION`: horizontal NED acceleration only.
 
-Only `mode=1` is accepted. Commands are interpreted in PX4 NED world frame, clamped by `max_vx_ned_mps`/`max_vy_ned_mps`, and ignored once older than `command_timeout_s` (the drone then holds its last position). Commands outside `MISSION` are latched but never streamed. Long term, replace this with a typed command message or `geometry_msgs/msg/TwistStamped`.
+Accelerations are clamped per axis by `max_accel_ned_mps2`. The z components must be NaN: the altitude stays at the value latched on entering `MISSION`. A NaN yaw faces the commanded velocity in `VELOCITY` and keeps the hold heading in `ACCELERATION`. Commands with an unset mode, a finite z, or missing fields for their mode are rejected. Commands older than `command_timeout_s` are ignored and the drone holds its last position; commands outside `MISSION` are latched but never streamed.
 
 ## Build
 

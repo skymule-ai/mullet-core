@@ -11,7 +11,6 @@ find_package(rclcpp_action REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(mullet_interfaces REQUIRED)
 find_package(px4_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 set(MULLET_CORE_NODE_SOURCES
@@ -43,7 +42,6 @@ ament_target_dependencies(${PROJECT_NAME}_node
   builtin_interfaces
   mullet_interfaces
   px4_msgs
-  std_msgs
   std_srvs
 )
 
@@ -109,7 +107,6 @@ if(BUILD_TESTING)
     builtin_interfaces
     mullet_interfaces
     px4_msgs
-    std_msgs
     std_srvs
   )
 

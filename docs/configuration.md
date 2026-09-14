@@ -17,12 +17,13 @@ run separate `mullet_core` deployments for multiple drones.
 | `control_rate_hz` | `50.0` | State machine and setpoint publish rate. Clamped to at least `2.0`. |
 | `offboard_warmup_s` | `1.0` | Proof-of-life warmup before requesting Offboard. Clamped to at least `1.0`. |
 | `command_retry_interval_s` | `1.0` | Retry interval for PX4 vehicle commands. Clamped to at least `0.1`. |
-| `command_timeout_s` | `0.25` | Freshness window for `MISSION` velocity commands. |
+| `command_timeout_s` | `0.25` | Freshness window for `MISSION` commands. |
 | `takeoff_acceptance_m` | `0.25` | Takeoff altitude acceptance used with hover altitude tolerance. |
 | `takeoff_yaw_tolerance_rad` | `0.174533` | Yaw error tolerance for explicit-yaw takeoff completion. |
 | `hover_yaw_rad` | `0.0` | Fallback hold yaw when current heading is unavailable. |
 | `max_vx_ned_mps` | `1.0` | `MISSION` command clamp for NED X velocity. Clamped to at least `0`. |
 | `max_vy_ned_mps` | `1.0` | `MISSION` command clamp for NED Y velocity. Clamped to at least `0`. |
+| `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED X/Y acceleration. Clamped to at least `0`. |
 | `timing_log_period_s` | `1.0` | Timing diagnostic log period. |
 | `min_takeoff_altitude_m` | `0.5` | Minimum accepted takeoff altitude. |
 | `max_takeoff_altitude_m` | `10.0` | Maximum accepted takeoff altitude. |
@@ -35,4 +36,4 @@ run separate `mullet_core` deployments for multiple drones.
 | `hover_settle_time_s` | `1.0` | Duration altitude, vertical velocity, and yaw must remain settled. |
 | `return_home_speed_mps` | `2.0` | Horizontal speed of the return-home setpoint. Tune per airframe. |
 | `return_home_acceptance_m` | `0.5` | Horizontal distance from home that ends return home. |
-| `command_topic` | `command` | `MISSION` velocity command topic, `std_msgs/Float32MultiArray [vx, vy, 1]`. |
+| `command_topic` | `command` | `MISSION` command topic, `mullet_interfaces/msg/MissionCommand`. |

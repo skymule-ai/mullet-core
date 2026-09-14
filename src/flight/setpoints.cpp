@@ -9,6 +9,26 @@
 namespace mullet_core
 {
 
+namespace
+{
+using Setpoint = OffboardHeartbeatPublisher::Setpoint;
+constexpr auto kUnset = OffboardHeartbeatPublisher::kUnset;
+
+Setpoint positionSetpoint(float x, float y, float z, float yaw_rad)
+{
+  Setpoint setpoint{};
+  setpoint.active = true;
+  setpoint.position = {x, y, z};
+  setpoint.yaw_rad = yaw_rad;
+  return setpoint;
+}
+
+float clampAbs(float value, double limit)
+{
+  return static_cast<float>(std::clamp(static_cast<double>(value), -limit, limit));
+}
+}  // namespace
+
 bool DroneStateMachine::takeoffSettled(const rclcpp::Time & current_time)
 {
   if (!px4_->hasLocalPosition()) {
@@ -138,26 +158,14 @@ void DroneStateMachine::latchHoverTargetPreservingTakeoffYaw()
 
 OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() const
 {
-  const OffboardHeartbeatPublisher::Setpoint hold{
-    true, true, hover_x_ned_m_, hover_y_ned_m_, hover_z_ned_m_, hover_yaw_rad_};
+  const auto hold = positionSetpoint(hover_x_ned_m_, hover_y_ned_m_, hover_z_ned_m_, hover_yaw_rad_);
   switch (state_) {
     case DroneState::kIdle:
       return {};
     case DroneState::kHold:
       return hold;
-    case DroneState::kMission: {
-      if (!commandFresh(now())) {
-        return hold;
-      }
-      const auto vx = static_cast<float>(std::clamp(
-        static_cast<double>(latest_command_.vx_ned_mps), -config_.max_vx_ned_mps,
-        config_.max_vx_ned_mps));
-      const auto vy = static_cast<float>(std::clamp(
-        static_cast<double>(latest_command_.vy_ned_mps), -config_.max_vy_ned_mps,
-        config_.max_vy_ned_mps));
-      const auto yaw = std::hypot(vx, vy) > 1e-3F ? std::atan2(vy, vx) : hover_yaw_rad_;
-      return {true, false, vx, vy, 0.0F, yaw};
-    }
+    case DroneState::kMission:
+      return commandFresh(now()) ? missionSetpoint() : hold;
     case DroneState::kTransition:
       if (phase_ == Phase::kLanding) {
         return {};  // PX4 lands in AUTO_LAND; offboard setpoints would be ignored anyway.
@@ -165,9 +173,38 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() 
       if (phase_ == Phase::kReturnHome) {
         return hold;
       }
-      return {true, true, takeoff_x_ned_m_, takeoff_y_ned_m_, takeoff_z_ned_m_, hover_yaw_rad_};
+      return positionSetpoint(takeoff_x_ned_m_, takeoff_y_ned_m_, takeoff_z_ned_m_, hover_yaw_rad_);
   }
   return {};
+}
+
+OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
+{
+  const auto & command = latest_command_;
+  Setpoint setpoint{};
+  setpoint.active = true;
+  setpoint.position = {kUnset, kUnset, hover_z_ned_m_};
+  if (command.mode == MissionCommand::VELOCITY) {
+    setpoint.velocity = {
+      clampAbs(command.vx_ned_mps, config_.max_vx_ned_mps),
+      clampAbs(command.vy_ned_mps, config_.max_vy_ned_mps), kUnset};
+  }
+  // ACCELERATION always carries it; VELOCITY only as optional feedforward (both axes or none).
+  if (std::isfinite(command.ax_ned_mps2)) {
+    setpoint.acceleration = {
+      clampAbs(command.ax_ned_mps2, config_.max_accel_ned_mps2),
+      clampAbs(command.ay_ned_mps2, config_.max_accel_ned_mps2), kUnset};
+  }
+  const auto vx = setpoint.velocity[0];
+  const auto vy = setpoint.velocity[1];
+  if (std::isfinite(command.yaw_rad)) {
+    setpoint.yaw_rad = command.yaw_rad;
+  } else if (command.mode == MissionCommand::VELOCITY && std::hypot(vx, vy) > 1e-3F) {
+    setpoint.yaw_rad = std::atan2(vy, vx);
+  } else {
+    setpoint.yaw_rad = hover_yaw_rad_;
+  }
+  return setpoint;
 }
 
 }  // namespace mullet_core

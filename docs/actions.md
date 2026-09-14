@@ -68,7 +68,7 @@ the `hold` service, stops in place and holds.
 ## start_mission and hold
 
 `start_mission` moves `HOLD` to `MISSION`, where the node streams the latest
-fresh velocity command from the `command` topic. `hold` moves `MISSION`, or a
+fresh `MissionCommand` from the `command` topic. `hold` moves `MISSION`, or a
 return home, back to `HOLD` at the current position. A rejected call returns
 `success=false` with the reject reason as the message.
 

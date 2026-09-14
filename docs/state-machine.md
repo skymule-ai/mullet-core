@@ -10,7 +10,7 @@ stabilization, mixing, and failsafe execution.
 IDLE        on the ground, or otherwise not under supervisor control
 TRANSITION  takeoff, land, or return home in progress
 HOLD        airborne, holding a latched position
-MISSION     airborne, following the external velocity command stream
+MISSION     airborne, following the external mission command stream
 ```
 
 Which transition is running is decided by the private `Phase`
@@ -58,8 +58,9 @@ Offboard control (`HOLD`, `MISSION`, takeoff ascent, return home):
 - Return home slides the hold target toward home at `return_home_speed_mps`, so
   PX4 never receives a setpoint step it would chase at full speed. It holds the
   current altitude.
-- `MISSION` streams the velocity command while it is fresh. When the stream
-  goes stale the drone holds its last position and stays in `MISSION`
+- `MISSION` streams the mission command (horizontal velocity or acceleration)
+  while it is fresh, at the altitude latched on entering `MISSION`. When the
+  stream goes stale the drone holds its last position and stays in `MISSION`
   (`command_stream_valid=false`); nothing leaves `MISSION` automatically.
 - The emergency stop is the RC controller's kill switch. There is no emergency
   land topic.

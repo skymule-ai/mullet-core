@@ -4,6 +4,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -12,6 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <mullet_interfaces/msg/drone_heartbeat.hpp>
+#include <mullet_interfaces/msg/mission_command.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
@@ -19,7 +22,6 @@
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 namespace mullet_core
@@ -34,6 +36,8 @@ using ReturnHome = mullet_interfaces::action::ReturnHome;
 using Takeoff = mullet_interfaces::action::Takeoff;
 using Trigger = std_srvs::srv::Trigger;
 using DroneHeartbeat = mullet_interfaces::msg::DroneHeartbeat;
+using MissionCommand = mullet_interfaces::msg::MissionCommand;
+using OffboardControlMode = px4_msgs::msg::OffboardControlMode;
 using TrajectorySetpoint = px4_msgs::msg::TrajectorySetpoint;
 using VehicleCommand = px4_msgs::msg::VehicleCommand;
 using VehicleLandDetected = px4_msgs::msg::VehicleLandDetected;
@@ -44,6 +48,7 @@ using VehicleStatus = px4_msgs::msg::VehicleStatus;
 constexpr double kRefLatDeg = 47.0;
 constexpr double kRefLonDeg = 8.0;
 constexpr float kRefAltM = 400.0F;
+constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
 
 rclcpp::QoS px4QoS()
 {
@@ -91,6 +96,12 @@ public:
         {
           events_.push_back(Event{EventType::kPositionSetpoint, msg->position[2]});
         }
+      });
+    control_mode_sub_ = node_->create_subscription<OffboardControlMode>(
+      fmu_prefix + "/fmu/in/offboard_control_mode", px4QoS(),
+      [this](const OffboardControlMode::SharedPtr msg) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        control_modes_.push_back(*msg);
       });
   }
 
@@ -201,6 +212,19 @@ public:
     return trajectory_setpoints_.empty() ? TrajectorySetpoint{} : trajectory_setpoints_.back();
   }
 
+  // Whether any setpoint / control mode streamed so far satisfies `predicate`.
+  bool sawSetpoint(const std::function<bool(const TrajectorySetpoint &)> & predicate) const
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return std::any_of(trajectory_setpoints_.begin(), trajectory_setpoints_.end(), predicate);
+  }
+
+  bool sawControlMode(const std::function<bool(const OffboardControlMode &)> & predicate) const
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return std::any_of(control_modes_.begin(), control_modes_.end(), predicate);
+  }
+
   bool positionSetpointBeforeFirstArm(float z_ned_m) const
   {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -298,12 +322,14 @@ private:
   mutable std::mutex mutex_{};
   std::vector<VehicleCommand> vehicle_commands_{};
   std::vector<TrajectorySetpoint> trajectory_setpoints_{};
+  std::vector<OffboardControlMode> control_modes_{};
   std::vector<Event> events_{};
   rclcpp::Publisher<VehicleLocalPosition>::SharedPtr local_position_pub_;
   rclcpp::Publisher<VehicleStatus>::SharedPtr vehicle_status_pub_;
   rclcpp::Publisher<VehicleLandDetected>::SharedPtr vehicle_land_detected_pub_;
   rclcpp::Subscription<VehicleCommand>::SharedPtr vehicle_command_sub_;
   rclcpp::Subscription<TrajectorySetpoint>::SharedPtr trajectory_sub_;
+  rclcpp::Subscription<OffboardControlMode>::SharedPtr control_mode_sub_;
 };
 
 class DroneStateMachineBehavior : public ::testing::Test
@@ -357,8 +383,7 @@ protected:
     rclcpp::NodeOptions options;
     options.parameter_overrides(parameters);
     state_machine_ = std::make_shared<DroneStateMachine>(options);
-    command_pub_ = client_node_->create_publisher<std_msgs::msg::Float32MultiArray>(
-      "command", commandQoS());
+    command_pub_ = client_node_->create_publisher<MissionCommand>("command", commandQoS());
     takeoff_client_ = rclcpp_action::create_client<Takeoff>(client_node_, "takeoff");
     land_client_ = rclcpp_action::create_client<Land>(client_node_, "land");
     return_home_client_ = rclcpp_action::create_client<ReturnHome>(client_node_, "return_home");
@@ -540,11 +565,21 @@ protected:
     ASSERT_TRUE(waitForState("MISSION"));
   }
 
+  void publishCommand(
+    std::uint8_t mode, float vx_ned_mps, float vy_ned_mps, float ax_ned_mps2, float ay_ned_mps2,
+    float vz_ned_mps = kNan)
+  {
+    MissionCommand command{};
+    command.mode = mode;
+    command.velocity_ned_mps = {vx_ned_mps, vy_ned_mps, vz_ned_mps};
+    command.acceleration_ned_mps2 = {ax_ned_mps2, ay_ned_mps2, kNan};
+    command.yaw_ned_rad = kNan;
+    command_pub_->publish(command);
+  }
+
   void publishVelocityCommand(float vx_ned_mps, float vy_ned_mps)
   {
-    std_msgs::msg::Float32MultiArray command{};
-    command.data = {vx_ned_mps, vy_ned_mps, 1.0F};
-    command_pub_->publish(command);
+    publishCommand(MissionCommand::VELOCITY, vx_ned_mps, vy_ned_mps, kNan, kNan);
   }
 
   std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
@@ -557,7 +592,7 @@ protected:
   rclcpp_action::Client<ReturnHome>::SharedPtr return_home_client_;
   rclcpp::Client<Trigger>::SharedPtr start_mission_client_;
   rclcpp::Client<Trigger>::SharedPtr hold_client_;
-  rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr command_pub_;
+  rclcpp::Publisher<MissionCommand>::SharedPtr command_pub_;
   rclcpp::Subscription<DroneHeartbeat>::SharedPtr heartbeat_sub_;
   mutable std::mutex heartbeat_mutex_;
   std::vector<DroneHeartbeat> heartbeats_;
@@ -831,6 +866,68 @@ TEST_F(DroneStateMachineBehavior, StaleStreamInMissionHoldsPositionWithoutLeavin
     return std::isfinite(setpoint.position[0]) && std::isfinite(setpoint.position[2]);
   }));
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
+}
+
+TEST_F(DroneStateMachineBehavior, VelocityModeHoldsAltitudeAndForwardsFeedforward)
+{
+  enterMission();
+
+  publishCommand(MissionCommand::VELOCITY, 0.2F, -0.1F, 0.5F, 0.0F);
+  // Horizontal velocity with acceleration feedforward, altitude held at the takeoff target.
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::isnan(setpoint.position[0]) && std::isnan(setpoint.position[1]) &&
+             std::fabs(setpoint.position[2] + 2.0F) < 1e-3F &&
+             std::fabs(setpoint.velocity[0] - 0.2F) < 1e-6F &&
+             std::fabs(setpoint.velocity[1] + 0.1F) < 1e-6F && std::isnan(setpoint.velocity[2]) &&
+             std::fabs(setpoint.acceleration[0] - 0.5F) < 1e-6F;
+    });
+  }));
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawControlMode([](const OffboardControlMode & mode) {
+      return mode.position && mode.velocity && mode.acceleration;
+    });
+  }));
+}
+
+TEST_F(DroneStateMachineBehavior, AccelerationModeStreamsClampedAccelerationOnly)
+{
+  enterMission();
+
+  publishCommand(MissionCommand::ACCELERATION, kNan, kNan, 10.0F, -0.5F);
+  // max_accel_ned_mps2 defaults to 3.0; no velocity loop, altitude still held.
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::isnan(setpoint.velocity[0]) && std::isnan(setpoint.velocity[1]) &&
+             std::fabs(setpoint.position[2] + 2.0F) < 1e-3F &&
+             std::fabs(setpoint.acceleration[0] - 3.0F) < 1e-6F &&
+             std::fabs(setpoint.acceleration[1] + 0.5F) < 1e-6F;
+    });
+  }));
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawControlMode([](const OffboardControlMode & mode) {
+      return mode.position && !mode.velocity && mode.acceleration;
+    });
+  }));
+}
+
+TEST_F(DroneStateMachineBehavior, MalformedMissionCommandsAreNeverLatched)
+{
+  enterMission();
+
+  const auto publish_and_settle = [this](std::uint8_t mode, float vx, float ax, float ay, float vz) {
+      publishCommand(mode, vx, 0.0F, ax, ay, vz);
+      std::this_thread::sleep_for(60ms);
+    };
+  publish_and_settle(0U, 0.2F, kNan, kNan, kNan);                        // mode unset
+  publish_and_settle(MissionCommand::VELOCITY, 0.2F, kNan, kNan, -0.5F);  // z commanded
+  publish_and_settle(MissionCommand::VELOCITY, kNan, kNan, kNan, kNan);   // no velocity
+  publish_and_settle(MissionCommand::VELOCITY, 0.2F, 0.5F, kNan, kNan);   // half feedforward
+  publish_and_settle(MissionCommand::ACCELERATION, 0.2F, kNan, kNan, kNan);  // no acceleration
+
+  EXPECT_FALSE(latestHeartbeat().has_command_stream);
+  EXPECT_EQ(fake_px4_->velocitySetpointCount(), 0U);
+  EXPECT_EQ(latestHeartbeat().state_label, "MISSION");
 }
 
 TEST_F(DroneStateMachineBehavior, ReturnHomeFliesBackThenHolds)
