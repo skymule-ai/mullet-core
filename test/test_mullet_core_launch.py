@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def _load_launch_module():
@@ -17,62 +18,51 @@ LAUNCH = _load_launch_module()
 PACKAGE_DIR = Path(__file__).parents[1]
 
 
-def test_explicit_instances_accept_whitespace_and_sort():
-    assert LAUNCH._parse_explicit_instances("2, 0, 1") == [0, 1, 2]
+def _write_config(tmp_path, parameters):
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"/**": {"ros__parameters": parameters}}), encoding="utf-8"
+    )
+    return config_path
 
 
-def test_explicit_instances_reject_duplicates():
-    with pytest.raises(ValueError, match="duplicate instance 1"):
-        LAUNCH._parse_explicit_instances("0,1,1")
+def test_load_launch_config_uses_yaml_values(tmp_path):
+    config_path = _write_config(
+        tmp_path, {"vehicle_instance": 2, "px4_namespace_prefix": "uav"}
+    )
+
+    assert LAUNCH._load_launch_config(str(config_path)) == (2, "uav")
+    assert LAUNCH._instance_to_namespace(2, "uav") == "/uav_2"
+
+def test_load_launch_config_accepts_empty_namespace_prefix(tmp_path):
+    config_path = _write_config(tmp_path, {"vehicle_instance": 0})
+
+    assert LAUNCH._load_launch_config(str(config_path)) == (0, "")
+    assert LAUNCH._instance_to_namespace(0, "uav") == ""
 
 
-def test_explicit_instances_reject_negative_values():
+def test_load_launch_config_rejects_invalid_instance(tmp_path):
+    config_path = _write_config(tmp_path, {"vehicle_instance": -1})
+
     with pytest.raises(ValueError, match=r"vehicle_instance must be in \[0, 254\]"):
-        LAUNCH._parse_explicit_instances("-1")
+        LAUNCH._load_launch_config(str(config_path))
 
 
-def test_explicit_instances_reject_unsafe_upper_bound():
-    with pytest.raises(ValueError, match=r"vehicle_instance must be in \[0, 254\]"):
-        LAUNCH._parse_explicit_instances("255")
+def test_load_launch_config_rejects_non_integer_instance(tmp_path):
+    config_path = _write_config(tmp_path, {"vehicle_instance": "1"})
 
+    with pytest.raises(ValueError, match="vehicle_instance must be an integer"):
+        LAUNCH._load_launch_config(str(config_path))
 
-def test_explicit_instances_reject_malformed_tokens():
-    with pytest.raises(ValueError, match="must be an integer"):
-        LAUNCH._parse_explicit_instances("0,abc")
+def test_load_launch_config_requires_vehicle_instance(tmp_path):
+    config_path = _write_config(tmp_path, {"px4_namespace_prefix": "uav"})
 
-
-def test_explicit_instances_reject_empty_tokens():
-    with pytest.raises(ValueError, match="empty tokens"):
-        LAUNCH._parse_explicit_instances("0,,1")
-
-
-def test_offset_instances_accept_safe_boundary():
-    assert LAUNCH._parse_offset_instances("2", "253") == [253, 254]
-
-
-def test_offset_instances_reject_invalid_ranges():
-    with pytest.raises(ValueError, match="num_robots must be at least 1"):
-        LAUNCH._parse_offset_instances("0", "0")
-    with pytest.raises(ValueError, match="px4_instance_offset must be at least 0"):
-        LAUNCH._parse_offset_instances("1", "-1")
-    with pytest.raises(ValueError, match="must be <= 254"):
-        LAUNCH._parse_offset_instances("2", "254")
-
-
-def test_configs_include_ground_arm_disarm_defaults():
-    for config_name in ("mullet_core_params_default.yaml", "mullet_core_params_1.yaml"):
-        config_text = (PACKAGE_DIR / "config" / config_name).read_text()
-
-        assert "disable_offboard_timeout_s: 5.0" in config_text
-        assert "request_arm_timeout_s: 5.0" in config_text
-        assert "armed_hold_duration_s: 5.0" in config_text
-        assert "request_disarm_timeout_s: 5.0" in config_text
-        assert "request_position_mode_timeout_s: 5.0" in config_text
-        assert "landed_confirmation_s: 0.5" in config_text
+    with pytest.raises(RuntimeError, match="must define vehicle_instance"):
+        LAUNCH._load_launch_config(str(config_path))
 
 
 def test_default_config_omits_deprecated_compatibility_parameters():
-    config_text = (PACKAGE_DIR / "config" / "mullet_core_params_default.yaml").read_text()
+    config_text = (PACKAGE_DIR / "config" / "mullet_core_params.yaml").read_text()
     config_keys = {
         line.split(":", 1)[0].strip()
         for line in config_text.splitlines()

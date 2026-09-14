@@ -1,4 +1,4 @@
-#include "mullet_core/drone_state_machine.hpp"
+#include "mullet_core/flight/drone_state_machine.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,7 @@ namespace mullet_core
 
 bool DroneStateMachine::phaseTimedOut(const rclcpp::Time & current_time, double timeout_s) const
 {
-  return (current_time - state_enter_time_).seconds() >= timeout_s;
+  return (current_time - phase_enter_time_).seconds() >= timeout_s;
 }
 
 void DroneStateMachine::updateTimingStats(const rclcpp::Time & current_time)

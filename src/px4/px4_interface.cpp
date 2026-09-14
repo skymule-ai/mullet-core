@@ -1,8 +1,8 @@
-#include "mullet_core/px4_interface.hpp"
+#include "mullet_core/px4/px4_interface.hpp"
 
-#include <array>
-#include <limits>
 #include <utility>
+
+#include "mullet_core/px4/topic_utils.hpp"
 
 namespace mullet_core
 {
@@ -13,95 +13,33 @@ constexpr float kPx4CustomMainMode = 1.0F;
 constexpr float kPx4OffboardMode = 6.0F;
 constexpr float kPx4PositionMode = 3.0F;
 constexpr float kArmParam = 1.0F;
-constexpr float kDisarmParam = 0.0F;
-
-rclcpp::QoS px4QoS()
-{
-  auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
-  qos.best_effort();
-  qos.transient_local();
-  return qos;
-}
-
-std::array<float, 3> nanVector()
-{
-  const auto nan = std::numeric_limits<float>::quiet_NaN();
-  return {nan, nan, nan};
-}
+// Identifies mullet_core as the command source to PX4; PX4 does not otherwise use these IDs.
+constexpr std::uint8_t kSourceSystemId = 1;
+constexpr std::uint8_t kSourceComponentId = 1;
 }  // namespace
 
 Px4Interface::Px4Interface(rclcpp::Node & node, std::string fmu_prefix, std::uint8_t target_system)
-: node_(node), fmu_prefix_(std::move(fmu_prefix)), target_system_(target_system)
+: node_(node), target_system_(target_system)
 {
-  const auto qos = px4QoS();
+  const auto qos = px4Qos();
 
-  offboard_mode_pub_ = node_.create_publisher<px4_msgs::msg::OffboardControlMode>(
-    topic("/fmu/in/offboard_control_mode"), qos);
-  trajectory_setpoint_pub_ = node_.create_publisher<px4_msgs::msg::TrajectorySetpoint>(
-    topic("/fmu/in/trajectory_setpoint"), qos);
   vehicle_command_pub_ = node_.create_publisher<px4_msgs::msg::VehicleCommand>(
-    topic("/fmu/in/vehicle_command"), qos);
+    px4Topic(fmu_prefix, "/fmu/in/vehicle_command"), qos);
 
   local_position_sub_ = node_.create_subscription<px4_msgs::msg::VehicleLocalPosition>(
-    topic("/fmu/out/vehicle_local_position"), qos,
+    px4Topic(fmu_prefix, "/fmu/out/vehicle_local_position"), qos,
     [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {onLocalPosition(msg);});
   vehicle_status_sub_ = node_.create_subscription<px4_msgs::msg::VehicleStatus>(
-    topic("/fmu/out/vehicle_status_v1"), qos,
+    px4Topic(fmu_prefix, "/fmu/out/vehicle_status_v1"), qos,
     [this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) {onVehicleStatus(msg);});
   land_detected_sub_ = node_.create_subscription<px4_msgs::msg::VehicleLandDetected>(
-    topic("/fmu/out/vehicle_land_detected"), qos,
+    px4Topic(fmu_prefix, "/fmu/out/vehicle_land_detected"), qos,
     [this](const px4_msgs::msg::VehicleLandDetected::SharedPtr msg) {onLandDetected(msg);});
-}
-
-void Px4Interface::publishOffboardControlMode(bool position_enabled, bool velocity_enabled)
-{
-  px4_msgs::msg::OffboardControlMode msg{};
-  msg.position = position_enabled;
-  msg.velocity = velocity_enabled;
-  msg.acceleration = false;
-  msg.attitude = false;
-  msg.body_rate = false;
-  msg.timestamp = nowUs();
-  offboard_mode_pub_->publish(msg);
-}
-
-void Px4Interface::publishPositionSetpoint(
-  float x_ned_m, float y_ned_m, float z_ned_m, float yaw_rad)
-{
-  px4_msgs::msg::TrajectorySetpoint msg{};
-  msg.position = {x_ned_m, y_ned_m, z_ned_m};
-  msg.velocity = nanVector();
-  msg.acceleration = nanVector();
-  msg.jerk = nanVector();
-  msg.yaw = yaw_rad;
-  msg.yawspeed = 0.0F;
-  msg.timestamp = nowUs();
-  trajectory_setpoint_pub_->publish(msg);
-}
-
-void Px4Interface::publishVelocitySetpoint(
-  float vx_ned_mps, float vy_ned_mps, float vz_ned_mps, float yaw_rad)
-{
-  px4_msgs::msg::TrajectorySetpoint msg{};
-  msg.position = nanVector();
-  msg.velocity = {vx_ned_mps, vy_ned_mps, vz_ned_mps};
-  msg.acceleration = nanVector();
-  msg.jerk = nanVector();
-  msg.yaw = yaw_rad;
-  msg.yawspeed = 0.0F;
-  msg.timestamp = nowUs();
-  trajectory_setpoint_pub_->publish(msg);
 }
 
 void Px4Interface::arm()
 {
   publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, kArmParam);
-}
-
-void Px4Interface::disarm()
-{
-  publishVehicleCommand(
-    px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, kDisarmParam);
 }
 
 void Px4Interface::setOffboardMode()
@@ -143,28 +81,9 @@ bool Px4Interface::hasLandDetected() const
   return has_land_detected_;
 }
 
-bool Px4Interface::landDetectedRecent(const rclcpp::Time & current_time, double max_age_s) const
-{
-  if (!has_land_detected_ || latest_land_detected_receipt_.nanoseconds() == 0) {
-    return false;
-  }
-  return (current_time - latest_land_detected_receipt_).seconds() <= max_age_s;
-}
-
 bool Px4Interface::isLanded() const
 {
   return has_land_detected_ && latest_land_detected_.landed;
-}
-
-bool Px4Interface::landedContinuouslyFor(
-  const rclcpp::Time & current_time, double duration_s, double max_age_s) const
-{
-  if (!isLanded() || !landDetectedRecent(current_time, max_age_s) ||
-    landed_since_.nanoseconds() == 0)
-  {
-    return false;
-  }
-  return (current_time - landed_since_).seconds() >= duration_s;
 }
 
 bool Px4Interface::isArmed() const
@@ -188,6 +107,11 @@ bool Px4Interface::isDisarmed() const
            px4_msgs::msg::VehicleStatus::ARMING_STATE_DISARMED;
 }
 
+bool Px4Interface::isFailsafe() const
+{
+  return has_vehicle_status_ && latest_vehicle_status_.failsafe;
+}
+
 const px4_msgs::msg::VehicleLocalPosition & Px4Interface::localPosition() const
 {
   return latest_local_position_;
@@ -196,22 +120,6 @@ const px4_msgs::msg::VehicleLocalPosition & Px4Interface::localPosition() const
 const px4_msgs::msg::VehicleStatus & Px4Interface::vehicleStatus() const
 {
   return latest_vehicle_status_;
-}
-
-std::string Px4Interface::topic(const std::string & suffix) const
-{
-  if (fmu_prefix_.empty()) {
-    return suffix;
-  }
-  if (fmu_prefix_.front() == '/') {
-    return fmu_prefix_ + suffix;
-  }
-  return "/" + fmu_prefix_ + suffix;
-}
-
-std::uint64_t Px4Interface::nowUs() const
-{
-  return static_cast<std::uint64_t>(node_.get_clock()->now().nanoseconds() / 1000);
 }
 
 void Px4Interface::publishVehicleCommand(
@@ -229,10 +137,10 @@ void Px4Interface::publishVehicleCommand(
   msg.command = command;
   msg.target_system = target_system_;
   msg.target_component = target_component_;
-  msg.source_system = 1;
-  msg.source_component = 1;
+  msg.source_system = kSourceSystemId;
+  msg.source_component = kSourceComponentId;
   msg.from_external = true;
-  msg.timestamp = nowUs();
+  msg.timestamp = px4NowUs(*node_.get_clock());
   vehicle_command_pub_->publish(msg);
 }
 
@@ -250,18 +158,8 @@ void Px4Interface::onVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr
 
 void Px4Interface::onLandDetected(const px4_msgs::msg::VehicleLandDetected::SharedPtr msg)
 {
-  const auto current_time = node_.get_clock()->now();
-  const bool was_landed = has_land_detected_ && latest_land_detected_.landed;
   latest_land_detected_ = *msg;
-  latest_land_detected_receipt_ = current_time;
   has_land_detected_ = true;
-  if (latest_land_detected_.landed) {
-    if (!was_landed || landed_since_.nanoseconds() == 0) {
-      landed_since_ = current_time;
-    }
-  } else {
-    landed_since_ = rclcpp::Time(0, 0, node_.get_clock()->get_clock_type());
-  }
 }
 
 }  // namespace mullet_core

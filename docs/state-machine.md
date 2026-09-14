@@ -7,87 +7,69 @@ stabilization, mixing, and failsafe execution.
 ## States
 
 ```text
-INIT
-READY
-ENABLE_OFFBOARD_REQUESTED
-WARMUP_OFFBOARD_HOLD_SETPOINTS
-REQUEST_OFFBOARD_ONLY
-OFFBOARD_HOLD
-ARM_REQUESTED
-ARM_COMMAND
-ARMED_OFFBOARD_HOLD
-DISARM_COMMAND
-RELEASE_OFFBOARD_REQUEST
-DISARMED_OFFBOARD_RELEASE_FAILED
-DISABLE_OFFBOARD_REQUESTED
-TAKEOFF_REQUESTED
-WARMUP_SETPOINTS
-REQUEST_OFFBOARD
-REQUEST_ARM
-TAKEOFF
-HOVER
-COMMAND
-CANCELING_TO_LAND
-LANDING
-TAKEOFF_FAILED
-TAKEOFF_CANCELED
-FAILSAFE_HOLD
-DISARMED
+IDLE        on the ground, or otherwise not under supervisor control
+TRANSITION  takeoff, land, or return home in progress
+HOLD        airborne, holding a latched position
+MISSION     airborne, following the external velocity command stream
 ```
 
-## Primary Flow
+Which transition is running is decided by the private `Phase`
+(`warmup`, `request_offboard`, `request_arm`, `ascent` for takeoff; `landing`;
+`return_home`) and published as the heartbeat's `active_action`
+(`takeoff`, `land`, `return_home`).
+
+## Transitions
 
 | From | To | Trigger |
 | --- | --- | --- |
-| `INIT` | `READY` | PX4 vehicle status exists and local position has valid XY/Z. |
-| `READY` | `ENABLE_OFFBOARD_REQUESTED` | `enable_offboard` goal is accepted. |
-| `ENABLE_OFFBOARD_REQUESTED` | `WARMUP_OFFBOARD_HOLD_SETPOINTS` | Next control tick commits the goal. |
-| `WARMUP_OFFBOARD_HOLD_SETPOINTS` | `REQUEST_OFFBOARD_ONLY` | `offboard_warmup_s` elapses. |
-| `REQUEST_OFFBOARD_ONLY` | `OFFBOARD_HOLD` | PX4 reports Offboard mode. |
-| `READY` | `ARM_REQUESTED` | `arm` goal accepted with confirmed landed telemetry. |
-| `OFFBOARD_HOLD` | `ARM_COMMAND` | `arm` goal accepted while already Offboard. |
-| `ARM_COMMAND` | `ARMED_OFFBOARD_HOLD` | PX4 reports armed. |
-| `ARMED_OFFBOARD_HOLD` | `DISARM_COMMAND` | `disarm` goal accepted or armed-hold timer expires with confirmed landed telemetry. |
-| `DISARM_COMMAND` | `RELEASE_OFFBOARD_REQUEST` | PX4 reports disarmed. |
-| `RELEASE_OFFBOARD_REQUEST` | `READY` | PX4 leaves Offboard mode. |
-| `RELEASE_OFFBOARD_REQUEST` | `DISARMED_OFFBOARD_RELEASE_FAILED` | PX4 stays Offboard past `request_position_mode_timeout_s`. |
-| `OFFBOARD_HOLD` | `DISABLE_OFFBOARD_REQUESTED` | `disable_offboard` goal is accepted. |
-| `DISABLE_OFFBOARD_REQUESTED` | `READY` | PX4 leaves Offboard mode. |
-| `READY` | `TAKEOFF_REQUESTED` | `takeoff` goal is accepted. |
-| `OFFBOARD_HOLD` | `REQUEST_ARM` | `takeoff` goal is accepted while PX4 is already Offboard and disarmed. |
-| `TAKEOFF_REQUESTED` | `WARMUP_SETPOINTS` | Next control tick commits the goal. |
-| `WARMUP_SETPOINTS` | `REQUEST_OFFBOARD` | Offboard proof-of-life warmup completes. |
-| `REQUEST_OFFBOARD` | `REQUEST_ARM` | PX4 reports Offboard mode. |
-| `REQUEST_ARM` | `TAKEOFF` | PX4 reports armed. |
-| `TAKEOFF` | `HOVER` | Altitude, vertical velocity, and yaw settle. |
-| `HOVER` | `COMMAND` | A fresh external velocity command is available. |
-| `COMMAND` | `FAILSAFE_HOLD` | External command becomes stale. |
-| `FAILSAFE_HOLD` | `COMMAND` | A fresh external velocity command returns. |
-| `LANDING` | `DISARMED` | PX4 reports disarmed. |
-| `DISARMED` | `READY` or `INIT` | Depends on current local-position validity. |
+| `IDLE` | `TRANSITION` (takeoff) | `Takeoff` goal: telemetry valid, disarmed. |
+| `TRANSITION` (takeoff) | `HOLD` | Altitude, vertical velocity, and yaw settle. |
+| `TRANSITION` (takeoff) | `IDLE` | Failure, cancel, or `Land` before the arm request. |
+| `TRANSITION` (takeoff) | `TRANSITION` (land) | Failure, cancel, or `Land` after the arm request. |
+| `HOLD` | `MISSION` | `start_mission` service. |
+| `MISSION` | `HOLD` | `hold` service. |
+| `HOLD`, `MISSION` | `TRANSITION` (return home) | `ReturnHome` goal. |
+| `TRANSITION` (return home) | `HOLD` | Within `return_home_acceptance_m` of home, or `hold` / cancel (holds in place). |
+| anything armed, not landing | `TRANSITION` (land) | `Land` goal. |
+| `TRANSITION` (land) | `IDLE` | PX4 reports disarmed. |
+
+PX4 overrides, checked first on every tick while the vehicle is airborne under
+Offboard control (`HOLD`, `MISSION`, takeoff ascent, return home):
+
+| Event | Result |
+| --- | --- |
+| PX4 reports disarmed (RC kill switch) | Active goals abort, `IDLE`. |
+| PX4 leaves Offboard (pilot takeover or PX4 failsafe) | Active goals abort, `HOLD`, re-latching the current position every tick. |
 
 ## Guardrails
 
-- Launch is passive. Reaching `READY` does not arm, request Offboard, or take
-  off without an accepted action goal.
-- Offboard proof-of-life is streamed before and during Offboard control.
-- `REQUEST_OFFBOARD` and `REQUEST_ARM` are separate states for clearer logs and
-  safer debugging.
-- Cancellation before an arm request returns to a terminal takeoff-canceled path
-  without landing recovery.
-- Cancellation after an arm request enters landing recovery because PX4 may arm
-  asynchronously.
-- `LANDING` keeps retrying `NAV_LAND` until PX4 reports disarmed, even if the
+- Launch is passive. `IDLE` never arms, requests Offboard, or takes off without
+  an accepted `Takeoff` goal.
+- Offboard proof-of-life (the takeoff setpoint) is streamed through warmup
+  before Offboard is requested.
+- The supervisor never fights PX4 or the pilot. After a mode switch away from
+  Offboard it only keeps the hold target on the vehicle, so re-entering Offboard
+  holds in place instead of flying back to a stale setpoint. Position loss and
+  other failsafes are PX4's to handle.
+- Cancelling a takeoff before the arm request returns to `IDLE`; after it, the
+  vehicle lands, because PX4 may arm asynchronously.
+- Landing keeps retrying `NAV_LAND` until PX4 reports disarmed, even after the
   user-facing land action times out.
-- Disarmed `OFFBOARD_HOLD` ignores external velocity commands and rejects land
-  goals because no landing action is required.
-- Direct disarm is a ground-only shutdown guarded by recent, continuously
-  landed `vehicle_land_detected` telemetry. Airborne or uncertain disarm
-  requests are rejected; use `Land` or emergency land for landing recovery.
+- Return home slides the hold target toward home at `return_home_speed_mps`, so
+  PX4 never receives a setpoint step it would chase at full speed. It holds the
+  current altitude.
+- `MISSION` streams the velocity command while it is fresh. When the stream
+  goes stale the drone holds its last position and stays in `MISSION`
+  (`command_stream_valid=false`); nothing leaves `MISSION` automatically.
+- The emergency stop is the RC controller's kill switch. There is no emergency
+  land topic.
 
 ## Source References
 
-- State enum: `include/mullet_core/types.hpp`
-- Tick dispatch and top-level preemption: `src/drone_state_machine.cpp`
-- State handlers: `src/drone_state_machine_states.cpp`
-- State predicates and names: `src/drone_state_machine_predicates.cpp`
+- State enum: `include/mullet_core/flight/types.hpp`
+- Tick dispatch and PX4 overrides: `src/flight/state_machine.cpp`
+- Transition bodies (takeoff, landing, return home, mission): `src/flight/states.cpp`
+- Command eligibility: `src/flight/predicates.cpp`
+- Target latching, takeoff settling, and setpoint assembly: `src/flight/setpoints.cpp`
+- State, phase, and PX4 labels: `src/flight/labels.cpp`
+- Action goal ownership and terminal results: `src/flight/detail/action_lifecycle_coordinator.hpp`

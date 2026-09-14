@@ -7,9 +7,8 @@ and do not require a separate frontend build.
 ## Reading Order
 
 1. [State machine](state-machine.md): states, transitions, and guardrails.
-2. [Actions](actions.md): action contracts and lifecycle behavior.
-3. [Configuration](configuration.md): parameters, defaults, launch arguments,
-   and deprecated compatibility parameters.
+2. [Actions](actions.md): action and service contracts.
+3. [Configuration](configuration.md): parameters and defaults.
 4. [PX4 interface](px4-interface.md): topics, QoS, PX4 commands, and
    multi-instance mapping.
 5. [Testing](testing.md): build, test, and scenario coverage.

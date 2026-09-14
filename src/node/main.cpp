@@ -3,7 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-#include "mullet_core/drone_state_machine.hpp"
+#include "mullet_core/flight/drone_state_machine.hpp"
 
 int main(int argc, char *argv[])
 {
