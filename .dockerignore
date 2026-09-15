@@ -1,0 +1,10 @@
+.git
+.claude
+mullet-agents
+docs/node_modules
+docs/dist
+build
+install
+log
+docker/.env
+**/__pycache__

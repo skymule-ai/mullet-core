@@ -1,0 +1,35 @@
+# mullet_core and the PX4 uXRCE-DDS agent on the drone, both started on boot. From here:
+#   cp .env.example .env   # ROS domain and PX4 UART
+#   docker compose up -d --build
+# Needs the mullet-interfaces checkout next to this repo. config/mullet_core_params.yaml is
+# mounted: edit it, then `docker compose restart mullet_core`.
+x-ros: &ros
+  network_mode: host
+  ipc: host  # Fast DDS shared memory between the agent and core containers
+  restart: unless-stopped
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:?set ROS_DOMAIN_ID in docker/.env}
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+services:
+  mullet_core:
+    <<: *ros
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      additional_contexts:
+        mullet_interfaces: ../../mullet-interfaces
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-ghcr.io/skymule-ai/mullet-ros2-base:v0.4.0}
+    image: mullet-core:latest
+    container_name: mullet-core
+    volumes:
+      - ../config/mullet_core_params.yaml:/opt/mullet_ws/install/mullet_core/share/mullet_core/config/mullet_core_params.yaml:ro
+
+  xrce_agent:
+    <<: *ros
+    image: ${BASE_IMAGE:-ghcr.io/skymule-ai/mullet-ros2-base:v0.4.0}
+    container_name: mullet-xrce-agent
+    devices:
+      - ${PX4_UART_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1
+    command: [MicroXRCEAgent, serial, --dev, /dev/ttyTHS1, -b, "${PX4_UART_BAUD:-921600}"]

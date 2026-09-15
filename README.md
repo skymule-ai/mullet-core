@@ -128,6 +128,23 @@ The launch file reads its complete configuration from
 Set `vehicle_instance` and `px4_namespace_prefix` in that YAML before launch.
 Run a separate deployment with its own YAML configuration for each drone.
 
+## Drone Deployment
+
+`docker/` runs `mullet_core` and the PX4 uXRCE-DDS agent on the drone computer, on top of
+`mullet-ros2-base`. The image build compiles `mullet_interfaces` (from the sibling
+`mullet-interfaces` checkout) and `mullet_core`, and runs this package's tests: a failing
+test means no image.
+
+```bash
+cd docker
+cp .env.example .env   # ROS_DOMAIN_ID, PX4 UART device and baud
+docker compose up -d --build
+```
+
+Both containers restart on boot. `config/mullet_core_params.yaml` is mounted read-only:
+edit it, then `docker compose restart mullet_core`. PX4's `UXRCE_DDS_DOM_ID` must equal
+`ROS_DOMAIN_ID`, and the base image's `px4_msgs` must match the firmware's messages.
+
 ## Command Examples
 
 Names are namespaced the same way as PX4 topics: bare for `vehicle_instance: 0`,
