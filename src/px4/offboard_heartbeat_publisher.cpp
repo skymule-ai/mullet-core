@@ -26,7 +26,10 @@ OffboardHeartbeatPublisher::OffboardHeartbeatPublisher(
   offboard_mode_pub_ = node_.create_publisher<px4_msgs::msg::OffboardControlMode>(
     px4Topic(fmu_prefix, "/fmu/in/offboard_control_mode"), qos);
   trajectory_setpoint_pub_ = node_.create_publisher<px4_msgs::msg::TrajectorySetpoint>(
-    px4Topic(fmu_prefix, "/fmu/in/trajectory_setpoint"), qos);
+    px4Topic(
+      fmu_prefix, "/fmu/in/trajectory_setpoint",
+      px4_msgs::msg::TrajectorySetpoint::MESSAGE_VERSION),
+    qos);
   timer_ = node_.create_wall_timer(ratePeriod(rate_hz, 2.0), [this]() {tick();});
 }
 

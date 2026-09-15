@@ -1,4 +1,5 @@
 #include "mullet_core/flight/drone_state_machine.hpp"
+#include "mullet_core/px4/topic_utils.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -72,11 +73,17 @@ public:
   explicit FakePx4Peer(const rclcpp::Node::SharedPtr & node, const std::string & fmu_prefix = "")
   : node_(node)
   {
-    const auto local_position_topic = fmu_prefix + "/fmu/out/vehicle_local_position";
-    const auto vehicle_status_topic = fmu_prefix + "/fmu/out/vehicle_status_v1";
-    const auto vehicle_land_detected_topic = fmu_prefix + "/fmu/out/vehicle_land_detected";
-    const auto vehicle_command_topic = fmu_prefix + "/fmu/in/vehicle_command";
-    const auto trajectory_topic = fmu_prefix + "/fmu/in/trajectory_setpoint";
+    // PX4's own names: versioned messages carry a _v<MESSAGE_VERSION> suffix.
+    const auto local_position_topic = px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_local_position", VehicleLocalPosition::MESSAGE_VERSION);
+    const auto vehicle_status_topic = px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_status", VehicleStatus::MESSAGE_VERSION);
+    const auto vehicle_land_detected_topic = px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_land_detected", VehicleLandDetected::MESSAGE_VERSION);
+    const auto vehicle_command_topic = px4Topic(
+      fmu_prefix, "/fmu/in/vehicle_command", VehicleCommand::MESSAGE_VERSION);
+    const auto trajectory_topic = px4Topic(
+      fmu_prefix, "/fmu/in/trajectory_setpoint", TrajectorySetpoint::MESSAGE_VERSION);
     local_position_pub_ = node_->create_publisher<VehicleLocalPosition>(
       local_position_topic, px4QoS());
     vehicle_status_pub_ = node_->create_publisher<VehicleStatus>(
