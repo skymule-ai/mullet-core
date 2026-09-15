@@ -24,16 +24,26 @@ Px4Interface::Px4Interface(rclcpp::Node & node, std::string fmu_prefix, std::uin
   const auto qos = px4Qos();
 
   vehicle_command_pub_ = node_.create_publisher<px4_msgs::msg::VehicleCommand>(
-    px4Topic(fmu_prefix, "/fmu/in/vehicle_command"), qos);
+    px4Topic(
+      fmu_prefix, "/fmu/in/vehicle_command", px4_msgs::msg::VehicleCommand::MESSAGE_VERSION),
+    qos);
 
   local_position_sub_ = node_.create_subscription<px4_msgs::msg::VehicleLocalPosition>(
-    px4Topic(fmu_prefix, "/fmu/out/vehicle_local_position"), qos,
+    px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_local_position",
+      px4_msgs::msg::VehicleLocalPosition::MESSAGE_VERSION),
+    qos,
     [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {onLocalPosition(msg);});
   vehicle_status_sub_ = node_.create_subscription<px4_msgs::msg::VehicleStatus>(
-    px4Topic(fmu_prefix, "/fmu/out/vehicle_status_v1"), qos,
+    px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_status", px4_msgs::msg::VehicleStatus::MESSAGE_VERSION),
+    qos,
     [this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) {onVehicleStatus(msg);});
   land_detected_sub_ = node_.create_subscription<px4_msgs::msg::VehicleLandDetected>(
-    px4Topic(fmu_prefix, "/fmu/out/vehicle_land_detected"), qos,
+    px4Topic(
+      fmu_prefix, "/fmu/out/vehicle_land_detected",
+      px4_msgs::msg::VehicleLandDetected::MESSAGE_VERSION),
+    qos,
     [this](const px4_msgs::msg::VehicleLandDetected::SharedPtr msg) {onLandDetected(msg);});
 }
 

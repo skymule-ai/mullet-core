@@ -31,6 +31,25 @@ inline std::string px4Topic(const std::string & fmu_prefix, const std::string & 
   return "/" + fmu_prefix + suffix;
 }
 
+// Builds the PX4 uXRCE-DDS topic name of a versioned message. PX4 names the topic of a message
+// whose MESSAGE_VERSION is above 0 "<topic>_v<version>" (VehicleStatus is v1; VehicleLocalPosition
+// is v1 from PX4 1.17). Pass the px4_msgs constant, e.g. VehicleLocalPosition::MESSAGE_VERSION, so
+// the name follows the px4_msgs branch the build pins to the firmware.
+//
+// Args:
+//   fmu_prefix: Vehicle FMU namespace, as for px4Topic above.
+//   suffix: Unversioned topic suffix, e.g. "/fmu/out/vehicle_local_position".
+//   message_version: The message's MESSAGE_VERSION.
+//
+// Returns:
+//   The fully-qualified, versioned topic name.
+inline std::string px4Topic(
+  const std::string & fmu_prefix, const std::string & suffix, std::uint32_t message_version)
+{
+  const auto topic = px4Topic(fmu_prefix, suffix);
+  return message_version == 0 ? topic : topic + "_v" + std::to_string(message_version);
+}
+
 // Returns the current time in microseconds, as required by the `timestamp` field on PX4
 // messages.
 //

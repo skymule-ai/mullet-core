@@ -68,9 +68,12 @@ PX4 topics use PX4-compatible QoS: best effort, transient local, keep last depth
 | publish | `/fmu/in/offboard_control_mode` | `OffboardHeartbeatPublisher` |
 | publish | `/fmu/in/trajectory_setpoint` | `OffboardHeartbeatPublisher` |
 | publish | `/fmu/in/vehicle_command` | `Px4Interface` |
-| subscribe | `/fmu/out/vehicle_local_position` | `Px4Interface` |
+| subscribe | `/fmu/out/vehicle_local_position_v1` | `Px4Interface` |
 | subscribe | `/fmu/out/vehicle_status_v1` | `Px4Interface` |
 | subscribe | `/fmu/out/vehicle_land_detected` | `Px4Interface` |
+
+Names are for PX4 1.17: a message with `MESSAGE_VERSION` above 0 gets a `_v<N>` suffix, taken
+from the px4_msgs constants the build uses (see `docs/px4-interface.md`).
 
 PX4 instances must be in `[0, 254]` so `target_system = instance + 1` maps to
 PX4 system IDs `[1, 255]` without wraparound. Instance `0` uses the bare `/fmu/...`

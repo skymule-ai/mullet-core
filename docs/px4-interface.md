@@ -21,9 +21,15 @@ PX4 topics use best-effort, transient-local QoS with keep-last depth `1`.
 | publish | `/fmu/in/offboard_control_mode` | `/<prefix>_N/fmu/in/offboard_control_mode` |
 | publish | `/fmu/in/trajectory_setpoint` | `/<prefix>_N/fmu/in/trajectory_setpoint` |
 | publish | `/fmu/in/vehicle_command` | `/<prefix>_N/fmu/in/vehicle_command` |
-| subscribe | `/fmu/out/vehicle_local_position` | `/<prefix>_N/fmu/out/vehicle_local_position` |
+| subscribe | `/fmu/out/vehicle_local_position_v1` | `/<prefix>_N/fmu/out/vehicle_local_position_v1` |
 | subscribe | `/fmu/out/vehicle_status_v1` | `/<prefix>_N/fmu/out/vehicle_status_v1` |
 | subscribe | `/fmu/out/vehicle_land_detected` | `/<prefix>_N/fmu/out/vehicle_land_detected` |
+
+PX4 names the topic of a message whose `MESSAGE_VERSION` is above 0 `<topic>_v<version>`.
+The node builds every name from the px4_msgs constant (`px4Topic(prefix, suffix, version)`), so the
+names follow the px4_msgs branch the build uses, which must match the firmware. The table shows PX4
+1.17 (`px4_msgs` `release/1.17`), where `VehicleLocalPosition` became v1; on 1.16 it was
+`vehicle_local_position`.
 
 ## Vehicle Commands
 

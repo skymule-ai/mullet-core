@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "mullet_core/px4/topic_utils.hpp"
+
 namespace mullet_core::state_machine_detail
 {
 namespace
@@ -86,6 +88,15 @@ TEST(StateMachineHelpers, LocalToGlobalMovesNorthEastAndUp)
   const auto east_60 = localToGlobal(60.0, 0.0, 0.0, 0.0, 1000.0, 0.0);
   EXPECT_NEAR(east_60.lon_deg, 2.0 * east_equator.lon_deg, 1e-9);
   EXPECT_NEAR(east_60.lat_deg, 60.0, 1e-12);
+}
+
+TEST(Px4Topic, VersionedMessagesGetTheVersionSuffix)
+{
+  EXPECT_EQ(
+    px4Topic("/uav_1", "/fmu/out/vehicle_local_position", 1),
+    "/uav_1/fmu/out/vehicle_local_position_v1");
+  EXPECT_EQ(px4Topic("", "/fmu/out/vehicle_status", 1), "/fmu/out/vehicle_status_v1");
+  EXPECT_EQ(px4Topic("uav_2", "/fmu/in/vehicle_command", 0), "/uav_2/fmu/in/vehicle_command");
 }
 
 }  // namespace
