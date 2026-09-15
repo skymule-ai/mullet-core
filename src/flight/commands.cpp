@@ -1,43 +1,60 @@
 #include "mullet_core/flight/drone_state_machine.hpp"
 
 #include <cmath>
-#include <cstddef>
 
 namespace mullet_core
 {
 
 namespace
 {
-constexpr std::size_t kCommandVxIndex = 0U;
-constexpr std::size_t kCommandVyIndex = 1U;
-constexpr std::size_t kCommandModeIndex = 2U;
-constexpr std::size_t kMinVelocityCommandSize = 3U;
-constexpr float kVelocityCommandMode = 1.0F;
-constexpr float kCommandModeTolerance = 1e-3F;
+using MissionCommand = mullet_interfaces::msg::MissionCommand;
+
+// Why `msg` must not be latched, or nullptr when it is valid. Every mode needs its own
+// horizontal fields finite, and z must stay NaN because mullet_core holds the altitude.
+const char * commandRejectReason(const MissionCommand & msg)
+{
+  const auto & velocity = msg.velocity_ned_mps;
+  const auto & acceleration = msg.acceleration_ned_mps2;
+  if (!std::isnan(velocity[2]) || !std::isnan(acceleration[2])) {
+    return "z must be NaN: mullet_core holds the altitude";
+  }
+  if (std::isinf(msg.yaw_ned_rad)) {
+    return "yaw_ned_rad must be finite or NaN";
+  }
+  const bool velocity_set = std::isfinite(velocity[0]) && std::isfinite(velocity[1]);
+  const bool acceleration_set = std::isfinite(acceleration[0]) && std::isfinite(acceleration[1]);
+  const bool acceleration_unset = std::isnan(acceleration[0]) && std::isnan(acceleration[1]);
+  switch (msg.mode) {
+    case MissionCommand::VELOCITY:
+      if (!velocity_set) {
+        return "VELOCITY needs a finite horizontal velocity";
+      }
+      if (!acceleration_set && !acceleration_unset) {
+        return "acceleration feedforward must set both horizontal axes or neither";
+      }
+      return nullptr;
+    case MissionCommand::ACCELERATION:
+      return acceleration_set ? nullptr : "ACCELERATION needs a finite horizontal acceleration";
+    default:
+      return "mode must be VELOCITY or ACCELERATION";
+  }
+}
 }  // namespace
 
 // Latches every valid command regardless of state; only MISSION ever streams it to PX4.
-void DroneStateMachine::onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+void DroneStateMachine::onCommand(const MissionCommand::SharedPtr msg)
 {
-  if (msg->data.size() < kMinVelocityCommandSize) {
-    RCLCPP_WARN(get_logger(), "Invalid command: expected [vx_ned_mps, vy_ned_mps, mode]");
+  if (const auto * reason = commandRejectReason(*msg)) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Invalid mission command: %s", reason);
     return;
   }
 
-  const auto vx_ned_mps = msg->data[kCommandVxIndex];
-  const auto vy_ned_mps = msg->data[kCommandVyIndex];
-  const auto mode = msg->data[kCommandModeIndex];
-  if (!std::isfinite(vx_ned_mps) || !std::isfinite(vy_ned_mps) || !std::isfinite(mode)) {
-    RCLCPP_WARN(get_logger(), "Invalid command: non-finite value rejected");
-    return;
-  }
-  if (std::fabs(mode - kVelocityCommandMode) > kCommandModeTolerance) {
-    RCLCPP_WARN(get_logger(), "Invalid command mode %.3f: expected mode=1", mode);
-    return;
-  }
-
-  latest_command_.vx_ned_mps = vx_ned_mps;
-  latest_command_.vy_ned_mps = vy_ned_mps;
+  latest_command_.mode = msg->mode;
+  latest_command_.vx_ned_mps = msg->velocity_ned_mps[0];
+  latest_command_.vy_ned_mps = msg->velocity_ned_mps[1];
+  latest_command_.ax_ned_mps2 = msg->acceleration_ned_mps2[0];
+  latest_command_.ay_ned_mps2 = msg->acceleration_ned_mps2[1];
+  latest_command_.yaw_rad = msg->yaw_ned_rad;
   latest_command_.stamp = now();
   latest_command_.valid = true;
 }

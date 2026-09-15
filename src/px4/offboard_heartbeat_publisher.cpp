@@ -1,7 +1,7 @@
 #include "mullet_core/px4/offboard_heartbeat_publisher.hpp"
 
-#include <array>
-#include <limits>
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "mullet_core/px4/topic_utils.hpp"
@@ -11,12 +11,10 @@ namespace mullet_core
 
 namespace
 {
-// PX4's TrajectorySetpoint uses NaN to mean "field not set"; whichever of position/velocity isn't
-// being streamed this tick must be filled with NaN rather than left as zero.
-std::array<float, 3> nanVector()
+// Whether any component is set; PX4 leaves NaN components uncontrolled.
+bool anySet(const OffboardHeartbeatPublisher::Vector3 & values)
 {
-  const auto nan = std::numeric_limits<float>::quiet_NaN();
-  return {nan, nan, nan};
+  return std::any_of(values.begin(), values.end(), [](float value) {return std::isfinite(value);});
 }
 }  // namespace
 
@@ -32,12 +30,13 @@ OffboardHeartbeatPublisher::OffboardHeartbeatPublisher(
   timer_ = node_.create_wall_timer(ratePeriod(rate_hz, 2.0), [this]() {tick();});
 }
 
-void OffboardHeartbeatPublisher::publishControlMode(bool position_enabled, bool velocity_enabled)
+void OffboardHeartbeatPublisher::publishControlMode(
+  bool position_enabled, bool velocity_enabled, bool acceleration_enabled)
 {
   px4_msgs::msg::OffboardControlMode msg{};
   msg.position = position_enabled;
   msg.velocity = velocity_enabled;
-  msg.acceleration = false;
+  msg.acceleration = acceleration_enabled;
   msg.attitude = false;
   msg.body_rate = false;
   msg.timestamp = px4NowUs(*node_.get_clock());
@@ -51,17 +50,13 @@ void OffboardHeartbeatPublisher::tick()
     return;
   }
 
-  publishControlMode(setpoint.position_mode, !setpoint.position_mode);
+  publishControlMode(
+    anySet(setpoint.position), anySet(setpoint.velocity), anySet(setpoint.acceleration));
   px4_msgs::msg::TrajectorySetpoint msg{};
-  if (setpoint.position_mode) {
-    msg.position = {setpoint.x, setpoint.y, setpoint.z};
-    msg.velocity = nanVector();
-  } else {
-    msg.position = nanVector();
-    msg.velocity = {setpoint.x, setpoint.y, setpoint.z};
-  }
-  msg.acceleration = nanVector();
-  msg.jerk = nanVector();
+  msg.position = setpoint.position;
+  msg.velocity = setpoint.velocity;
+  msg.acceleration = setpoint.acceleration;
+  msg.jerk = {kUnset, kUnset, kUnset};
   msg.yaw = setpoint.yaw_rad;
   msg.yawspeed = 0.0F;
   msg.timestamp = px4NowUs(*node_.get_clock());

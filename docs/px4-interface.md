@@ -39,20 +39,21 @@ which map to PX4 system IDs `[1, 255]` without unsigned wraparound.
 
 ## Setpoints
 
-Position control publishes `OffboardControlMode(position=true)` and a
-`TrajectorySetpoint` with finite position and yaw. Velocity control publishes
-`OffboardControlMode(velocity=true)` and a `TrajectorySetpoint` with finite NED
-velocity and yaw. Unused trajectory fields are set to NaN.
+Every tick publishes a `TrajectorySetpoint` and an `OffboardControlMode` that
+enables position, velocity and acceleration control for each field with a finite
+component. Unset components are NaN, so axes can mix:
+
+| State | position | velocity | acceleration |
+| --- | --- | --- | --- |
+| hold, takeoff, return home | x, y, z | NaN | NaN |
+| `MISSION`, `VELOCITY` | NaN, NaN, z | vx, vy, NaN | ax, ay, NaN or NaN |
+| `MISSION`, `ACCELERATION` | NaN, NaN, z | NaN | ax, ay, NaN |
 
 ## External Command Stream
 
-`MISSION` streams the compatibility command topic:
-
-```text
-std_msgs/msg/Float32MultiArray [vx_ned_mps, vy_ned_mps, mode]
-```
-
-Only `mode=1` is accepted. Non-finite values are rejected before entering the
-latest command. Accepted commands are interpreted in the PX4 NED world frame,
-clamped by `max_vx_ned_mps` and `max_vy_ned_mps`, and streamed with zero vertical
-velocity.
+`MISSION` streams `mullet_interfaces/msg/MissionCommand` from `command_topic`.
+Invalid commands (unset mode, finite z, or non-finite fields the mode needs) are
+rejected before entering the latest command. Accepted commands are interpreted in
+the PX4 NED world frame; velocities are clamped by `max_vx_ned_mps` and
+`max_vy_ned_mps`, accelerations per axis by `max_accel_ned_mps2`, and the z
+position is the altitude latched on entering `MISSION`.

@@ -1,7 +1,9 @@
 #ifndef MULLET_CORE_PX4_OFFBOARD_HEARTBEAT_PUBLISHER_HPP_
 #define MULLET_CORE_PX4_OFFBOARD_HEARTBEAT_PUBLISHER_HPP_
 
+#include <array>
 #include <functional>
+#include <limits>
 #include <string>
 
 #include <px4_msgs/msg/offboard_control_mode.hpp>
@@ -18,16 +20,21 @@ namespace mullet_core
 class OffboardHeartbeatPublisher
 {
 public:
-  // What to stream on a given tick. `active=false` publishes nothing this tick (e.g. the vehicle
-  // is not under offboard control). `x`/`y`/`z` hold NED meters when `position_mode` is true, or
-  // NED m/s when false.
+  // PX4's TrajectorySetpoint "not controlled" marker.
+  static constexpr float kUnset = std::numeric_limits<float>::quiet_NaN();
+  using Vector3 = std::array<float, 3>;
+
+  // What to stream on a given tick, in PX4 NED (m, m/s, m/s^2, rad). As in TrajectorySetpoint,
+  // a kUnset component is left to PX4, so axes can mix (e.g. position z with velocity x/y).
+  // OffboardControlMode enables position, velocity and acceleration control for each field
+  // with any set component. `active=false` publishes nothing this tick (e.g. the vehicle is not
+  // under offboard control).
   struct Setpoint
   {
     bool active{false};
-    bool position_mode{true};
-    float x{0.0F};
-    float y{0.0F};
-    float z{0.0F};
+    Vector3 position{kUnset, kUnset, kUnset};
+    Vector3 velocity{kUnset, kUnset, kUnset};
+    Vector3 acceleration{kUnset, kUnset, kUnset};
     float yaw_rad{0.0F};
   };
   using SetpointBuilder = std::function<Setpoint()>;
@@ -48,10 +55,9 @@ private:
   // Builds this tick's Setpoint via `setpoint_builder_` and streams it to PX4 (control-mode
   // heartbeat + trajectory setpoint), skipping the publish entirely when `active` is false.
   void tick();
-  // Publishes which control fields this tick's TrajectorySetpoint carries: position xor
-  // velocity, never both or neither (acceleration/attitude/body_rate are unused by this
-  // supervisor).
-  void publishControlMode(bool position_enabled, bool velocity_enabled);
+  // Publishes which control fields this tick's TrajectorySetpoint carries (attitude and
+  // body_rate are unused by this supervisor).
+  void publishControlMode(bool position_enabled, bool velocity_enabled, bool acceleration_enabled);
 
   rclcpp::Node & node_;
   SetpointBuilder setpoint_builder_;

@@ -6,7 +6,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "mullet_core/flight/types.hpp"
@@ -17,6 +16,7 @@
 #include "mullet_interfaces/action/return_home.hpp"
 #include "mullet_interfaces/action/takeoff.hpp"
 #include "mullet_interfaces/msg/drone_heartbeat.hpp"
+#include "mullet_interfaces/msg/mission_command.hpp"
 
 namespace mullet_core::state_machine_detail
 {
@@ -52,10 +52,11 @@ private:
   using Takeoff = mullet_interfaces::action::Takeoff;
   using GoalHandleTakeoff = rclcpp_action::ServerGoalHandle<Takeoff>;
   using Trigger = std_srvs::srv::Trigger;
+  using MissionCommand = mullet_interfaces::msg::MissionCommand;
 
   // Declares all ROS parameters into `config_`/topic names, clamping each to a safe minimum.
   void loadParameters();
-  // Creates the external velocity command subscription.
+  // Creates the external mission command subscription.
   void initializeSubscriptions();
   // Creates the three ROS action servers and the two Trigger services.
   void initializeActionServers();
@@ -71,8 +72,8 @@ private:
   // Assembles the full `/mullet/heartbeat` snapshot (FSM state, PX4 status, position,
   // capability flags) from current node state.
   mullet_interfaces::msg::DroneHeartbeat buildHeartbeatMessage();
-  // Validates and latches an external velocity command from `command_topic_`.
-  void onCommand(const std_msgs::msg::Float32MultiArray::SharedPtr msg);
+  // Validates and latches an external mission command from `command_topic_`.
+  void onCommand(const MissionCommand::SharedPtr msg);
   // Trigger service bodies: start_mission (HOLD -> MISSION) and hold (MISSION or return home
   // -> HOLD). Both reject with the matching xRejectReason() as the response message.
   void onStartMission(Trigger::Response & response);
@@ -109,7 +110,7 @@ private:
   void handleReturnHome();
   void handleMission(const rclcpp::Time & now);
 
-  // Returns whether the last external velocity command is still within `command_timeout_s`.
+  // Returns whether the last external mission command is still within `command_timeout_s`.
   bool commandFresh(const rclcpp::Time & now) const;
   // Returns whether the vehicle has reached and held the takeoff target for
   // `hover_settle_time_s`, per position/velocity/yaw tolerances in `config_`.
@@ -145,6 +146,9 @@ private:
   void latchHoverTargetPreservingTakeoffYaw();
   // Builds the setpoint OffboardHeartbeatPublisher should stream for the current state.
   OffboardHeartbeatPublisher::Setpoint buildOffboardSetpoint() const;
+  // MISSION setpoint from the fresh latched command: its horizontal axes in the command's
+  // mode, clamped, at the altitude held since entering MISSION.
+  OffboardHeartbeatPublisher::Setpoint missionSetpoint() const;
   // Publish feedback for the active goal of each action type (no-op if none is active).
   void publishTakeoffFeedback(float progress);
   void publishLandFeedback(const rclcpp::Time & now);
@@ -178,7 +182,7 @@ private:
   std::unique_ptr<Px4Interface> px4_;
   std::unique_ptr<OffboardHeartbeatPublisher> offboard_heartbeat_;
   std::unique_ptr<PaddockHeartbeatPublisher> paddock_heartbeat_;
-  VelocityCommand latest_command_{};
+  LatchedCommand latest_command_{};
 
   DroneState state_{DroneState::kIdle};
   DroneState previous_state_{DroneState::kIdle};
@@ -219,7 +223,7 @@ private:
   float active_takeoff_target_yaw_rad_{0.0F};
   rclcpp::Time hover_settle_start_time_{};
 
-  rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr command_sub_;
+  rclcpp::Subscription<MissionCommand>::SharedPtr command_sub_;
   rclcpp_action::Server<Takeoff>::SharedPtr takeoff_action_server_;
   rclcpp_action::Server<Land>::SharedPtr land_action_server_;
   rclcpp_action::Server<ReturnHome>::SharedPtr return_home_action_server_;
