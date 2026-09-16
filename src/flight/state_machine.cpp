@@ -142,6 +142,7 @@ void DroneStateMachine::loadParameters()
   config_.hover_yaw_rad = declare_parameter<double>("hover_yaw_rad", config_.hover_yaw_rad);
   declare_and_clamp("max_vx_ned_mps", config_.max_vx_ned_mps, 0.0);
   declare_and_clamp("max_vy_ned_mps", config_.max_vy_ned_mps, 0.0);
+  declare_and_clamp("max_vz_ned_mps", config_.max_vz_ned_mps, 0.0);
   declare_and_clamp("max_accel_ned_mps2", config_.max_accel_ned_mps2, 0.0);
   declare_and_clamp("timing_log_period_s", config_.timing_log_period_s, 0.25);
   declare_and_clamp("min_takeoff_altitude_m", config_.min_takeoff_altitude_m, 0.1);

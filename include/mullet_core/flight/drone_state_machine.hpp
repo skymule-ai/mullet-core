@@ -149,6 +149,8 @@ private:
   // MISSION setpoint from the fresh latched command: its horizontal axes in the command's
   // mode, clamped, at the altitude held since entering MISSION.
   OffboardHeartbeatPublisher::Setpoint missionSetpoint() const;
+  // Whether the latched command is VELOCITY_3D or ACCELERATION_3D, i.e. it controls z.
+  bool missionCommandIs3d() const;
   // Publish feedback for the active goal of each action type (no-op if none is active).
   void publishTakeoffFeedback(float progress);
   void publishLandFeedback(const rclcpp::Time & now);

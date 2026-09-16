@@ -178,28 +178,40 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() 
   return {};
 }
 
+bool DroneStateMachine::missionCommandIs3d() const
+{
+  return latest_command_.mode == MissionCommand::VELOCITY_3D ||
+         latest_command_.mode == MissionCommand::ACCELERATION_3D;
+}
+
 OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
 {
   const auto & command = latest_command_;
+  const bool three_d = missionCommandIs3d();
+  const bool velocity_mode =
+    command.mode == MissionCommand::VELOCITY || command.mode == MissionCommand::VELOCITY_3D;
   Setpoint setpoint{};
   setpoint.active = true;
-  setpoint.position = {kUnset, kUnset, hover_z_ned_m_};
-  if (command.mode == MissionCommand::VELOCITY) {
+  // Planar modes hold the altitude latched on entering MISSION; 3D modes leave z to the command.
+  setpoint.position = {kUnset, kUnset, three_d ? kUnset : hover_z_ned_m_};
+  if (velocity_mode) {
     setpoint.velocity = {
       clampAbs(command.vx_ned_mps, config_.max_vx_ned_mps),
-      clampAbs(command.vy_ned_mps, config_.max_vy_ned_mps), kUnset};
+      clampAbs(command.vy_ned_mps, config_.max_vy_ned_mps),
+      three_d ? clampAbs(command.vz_ned_mps, config_.max_vz_ned_mps) : kUnset};
   }
-  // ACCELERATION always carries it; VELOCITY only as optional feedforward (both axes or none).
+  // ACCELERATION modes always carry it; VELOCITY modes only as optional feedforward.
   if (std::isfinite(command.ax_ned_mps2)) {
     setpoint.acceleration = {
       clampAbs(command.ax_ned_mps2, config_.max_accel_ned_mps2),
-      clampAbs(command.ay_ned_mps2, config_.max_accel_ned_mps2), kUnset};
+      clampAbs(command.ay_ned_mps2, config_.max_accel_ned_mps2),
+      three_d ? clampAbs(command.az_ned_mps2, config_.max_accel_ned_mps2) : kUnset};
   }
   const auto vx = setpoint.velocity[0];
   const auto vy = setpoint.velocity[1];
   if (std::isfinite(command.yaw_rad)) {
     setpoint.yaw_rad = command.yaw_rad;
-  } else if (command.mode == MissionCommand::VELOCITY && std::hypot(vx, vy) > 1e-3F) {
+  } else if (velocity_mode && std::hypot(vx, vy) > 1e-3F) {
     setpoint.yaw_rad = std::atan2(vy, vx);
   } else {
     setpoint.yaw_rad = hover_yaw_rad_;
