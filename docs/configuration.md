@@ -23,7 +23,8 @@ run separate `mullet_core` deployments for multiple drones.
 | `hover_yaw_rad` | `0.0` | Fallback hold yaw when current heading is unavailable. |
 | `max_vx_ned_mps` | `1.0` | `MISSION` command clamp for NED X velocity. Clamped to at least `0`. |
 | `max_vy_ned_mps` | `1.0` | `MISSION` command clamp for NED Y velocity. Clamped to at least `0`. |
-| `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED X/Y acceleration. Clamped to at least `0`. |
+| `max_vz_ned_mps` | `0.5` | `MISSION` command clamp for NED Z velocity (3D modes). Clamped to at least `0`. |
+| `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED acceleration. Clamped to at least `0`. |
 | `timing_log_period_s` | `1.0` | Timing diagnostic log period. |
 | `min_takeoff_altitude_m` | `0.5` | Minimum accepted takeoff altitude. |
 | `max_takeoff_altitude_m` | `10.0` | Maximum accepted takeoff altitude. |

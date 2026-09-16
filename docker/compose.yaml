@@ -10,6 +10,8 @@ x-ros: &ros
   environment:
     ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:?set ROS_DOMAIN_ID in docker/.env}
     RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    # Paddock (and ergodic) use UDPv4. Default Fast DDS SHM locators are invisible over WiFi.
+    FASTDDS_BUILTIN_TRANSPORTS: UDPv4
 
 services:
   mullet_core:

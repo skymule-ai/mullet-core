@@ -19,16 +19,18 @@ enum class DroneState : std::uint8_t
   kMission,     // Airborne, following the external mission command stream.
 };
 
-// Latest valid mullet_interfaces/msg/MissionCommand, horizontal axes only, in NED. `mode` is
-// one of its mode constants; the acceleration is NaN when a VELOCITY command has no
-// feedforward, and the yaw is NaN when the command leaves heading to mullet_core.
+// Latest valid mullet_interfaces/msg/MissionCommand, in NED. `mode` is one of its mode
+// constants; z is NaN in the planar modes, the acceleration is NaN when a VELOCITY command has
+// no feedforward, and the yaw is NaN when the command leaves heading to mullet_core.
 struct LatchedCommand
 {
   std::uint8_t mode{0};
   float vx_ned_mps{0.0F};
   float vy_ned_mps{0.0F};
+  float vz_ned_mps{0.0F};
   float ax_ned_mps2{0.0F};
   float ay_ned_mps2{0.0F};
+  float az_ned_mps2{0.0F};
   float yaw_rad{0.0F};
   rclcpp::Time stamp{};
   bool valid{false};
@@ -52,7 +54,8 @@ struct ControlConfig
   double hover_yaw_rad{0.0};                    // Fallback hold yaw if current heading is non-finite.
   double max_vx_ned_mps{1.0};                   // Clamp applied to MISSION vx commands.
   double max_vy_ned_mps{1.0};                   // Clamp applied to MISSION vy commands.
-  double max_accel_ned_mps2{3.0};               // Per-axis clamp applied to MISSION ax/ay commands.
+  double max_vz_ned_mps{0.5};                   // Clamp applied to MISSION vz commands (3D modes).
+  double max_accel_ned_mps2{3.0};               // Per-axis clamp applied to MISSION acceleration commands.
   double timing_log_period_s{1.0};              // Interval between periodic tick-jitter log lines.
   double min_takeoff_altitude_m{0.5};           // Lower bound enforced on Takeoff goal altitude_m.
   double max_takeoff_altitude_m{10.0};          // Upper bound enforced on Takeoff goal altitude_m.

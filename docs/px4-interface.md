@@ -54,12 +54,16 @@ component. Unset components are NaN, so axes can mix:
 | hold, takeoff, return home | x, y, z | NaN | NaN |
 | `MISSION`, `VELOCITY` | NaN, NaN, z | vx, vy, NaN | ax, ay, NaN or NaN |
 | `MISSION`, `ACCELERATION` | NaN, NaN, z | NaN | ax, ay, NaN |
+| `MISSION`, `VELOCITY_3D` | NaN | vx, vy, vz | ax, ay, az or NaN |
+| `MISSION`, `ACCELERATION_3D` | NaN | NaN | ax, ay, az |
 
 ## External Command Stream
 
 `MISSION` streams `mullet_interfaces/msg/MissionCommand` from `command_topic`.
-Invalid commands (unset mode, finite z, or non-finite fields the mode needs) are
-rejected before entering the latest command. Accepted commands are interpreted in
-the PX4 NED world frame; velocities are clamped by `max_vx_ned_mps` and
-`max_vy_ned_mps`, accelerations per axis by `max_accel_ned_mps2`, and the z
-position is the altitude latched on entering `MISSION`.
+Invalid commands (unset mode, finite z in a planar mode, or non-finite fields the
+mode needs) are rejected before entering the latest command. Accepted commands are
+interpreted in the PX4 NED world frame; velocities are clamped by `max_vx_ned_mps`,
+`max_vy_ned_mps` and `max_vz_ned_mps`, accelerations per axis by
+`max_accel_ned_mps2`. In the planar modes the z position is the altitude latched on
+entering `MISSION`; in the 3D modes the command drives z, and a stale stream holds
+the altitude the drone has at that moment.

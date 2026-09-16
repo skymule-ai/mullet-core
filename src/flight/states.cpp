@@ -171,13 +171,16 @@ void DroneStateMachine::handleReturnHome()
 
 void DroneStateMachine::handleMission(const rclcpp::Time & t)
 {
-  // While the stream is fresh the drone moves, so keep the horizontal hold target on it: a
-  // stale stream then holds wherever the drone was, not where the mission started. Altitude
-  // stays latched from entering MISSION, since the command stream never controls it.
+  // While the stream is fresh the drone moves, so keep the hold target on it: a stale stream
+  // then holds wherever the drone was, not where the mission started. In planar modes the
+  // altitude stays latched from entering MISSION, since the command stream never controls it;
+  // in 3D modes the stream moves z too, so the hold follows it.
   if (commandFresh(t)) {
     const auto mission_z_ned_m = hover_z_ned_m_;
     latchHoverTarget();
-    hover_z_ned_m_ = mission_z_ned_m;
+    if (!missionCommandIs3d()) {
+      hover_z_ned_m_ = mission_z_ned_m;
+    }
   }
 }
 

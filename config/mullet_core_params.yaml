@@ -31,13 +31,15 @@
     return_home_acceptance_m: 0.5
 
     # MISSION command stream: mullet_interfaces/msg/MissionCommand, mode VELOCITY (optional
-    # acceleration feedforward) or ACCELERATION. Altitude is held at the MISSION entry value.
+    # acceleration feedforward) or ACCELERATION, planar with the altitude held at the MISSION
+    # entry value, or their 3D variants VELOCITY_3D / ACCELERATION_3D, which command z too.
     command_topic: "command"
     command_timeout_s: 0.25
 
     # Safety clamps for MISSION commands, per NED axis.
     max_vx_ned_mps: 1.0
     max_vy_ned_mps: 1.0
+    max_vz_ned_mps: 0.5
     max_accel_ned_mps2: 3.0
 
     # Low-frequency control-loop timing diagnostics.

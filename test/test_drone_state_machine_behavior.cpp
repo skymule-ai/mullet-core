@@ -574,12 +574,12 @@ protected:
 
   void publishCommand(
     std::uint8_t mode, float vx_ned_mps, float vy_ned_mps, float ax_ned_mps2, float ay_ned_mps2,
-    float vz_ned_mps = kNan)
+    float vz_ned_mps = kNan, float az_ned_mps2 = kNan)
   {
     MissionCommand command{};
     command.mode = mode;
     command.velocity_ned_mps = {vx_ned_mps, vy_ned_mps, vz_ned_mps};
-    command.acceleration_ned_mps2 = {ax_ned_mps2, ay_ned_mps2, kNan};
+    command.acceleration_ned_mps2 = {ax_ned_mps2, ay_ned_mps2, az_ned_mps2};
     command.yaw_ned_rad = kNan;
     command_pub_->publish(command);
   }
@@ -918,6 +918,58 @@ TEST_F(DroneStateMachineBehavior, AccelerationModeStreamsClampedAccelerationOnly
   }));
 }
 
+TEST_F(DroneStateMachineBehavior, Velocity3dModeStreamsClampedZWithoutHoldingAltitude)
+{
+  enterMission();
+
+  publishCommand(MissionCommand::VELOCITY_3D, 0.2F, -0.1F, kNan, kNan, -2.0F);
+  // max_vz_ned_mps defaults to 0.5; no position loop on any axis.
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::isnan(setpoint.position[0]) && std::isnan(setpoint.position[2]) &&
+             std::fabs(setpoint.velocity[0] - 0.2F) < 1e-6F &&
+             std::fabs(setpoint.velocity[2] + 0.5F) < 1e-6F && std::isnan(setpoint.acceleration[2]);
+    });
+  }));
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawControlMode([](const OffboardControlMode & mode) {
+      return !mode.position && mode.velocity && !mode.acceleration;
+    });
+  }));
+}
+
+TEST_F(DroneStateMachineBehavior, Acceleration3dModeStreamsClampedAccelerationOnAllAxes)
+{
+  enterMission();
+
+  publishCommand(MissionCommand::ACCELERATION_3D, kNan, kNan, 0.5F, 0.0F, kNan, -10.0F);
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::isnan(setpoint.position[2]) && std::isnan(setpoint.velocity[2]) &&
+             std::fabs(setpoint.acceleration[0] - 0.5F) < 1e-6F &&
+             std::fabs(setpoint.acceleration[2] + 3.0F) < 1e-6F;
+    });
+  }));
+}
+
+TEST_F(DroneStateMachineBehavior, Stale3dStreamHoldsTheCurrentAltitude)
+{
+  enterMission();
+
+  // The drone climbs from the 2 m takeoff to 5 m while the 3D stream is fresh.
+  publishCommand(MissionCommand::VELOCITY_3D, 0.0F, 0.0F, kNan, kNan, -0.3F);
+  ASSERT_TRUE(waitFor([this]() {return latestHeartbeat().command_stream_valid;}));
+  fake_px4_->publishLocalPosition(-5.0F, 0.0F, 0.0F);
+  std::this_thread::sleep_for(100ms);
+  publishCommand(MissionCommand::VELOCITY_3D, 0.0F, 0.0F, kNan, kNan, -0.3F);
+  ASSERT_TRUE(waitFor([this]() {return !latestHeartbeat().command_stream_valid;}));
+
+  EXPECT_TRUE(waitFor([this]() {
+    return std::fabs(fake_px4_->latestSetpoint().position[2] + 5.0F) < 1e-3F;
+  }));
+  EXPECT_EQ(latestHeartbeat().state_label, "MISSION");
+}
+
 TEST_F(DroneStateMachineBehavior, MalformedMissionCommandsAreNeverLatched)
 {
   enterMission();
@@ -931,6 +983,8 @@ TEST_F(DroneStateMachineBehavior, MalformedMissionCommandsAreNeverLatched)
   publish_and_settle(MissionCommand::VELOCITY, kNan, kNan, kNan, kNan);   // no velocity
   publish_and_settle(MissionCommand::VELOCITY, 0.2F, 0.5F, kNan, kNan);   // half feedforward
   publish_and_settle(MissionCommand::ACCELERATION, 0.2F, kNan, kNan, kNan);  // no acceleration
+  publish_and_settle(MissionCommand::VELOCITY_3D, 0.2F, kNan, kNan, kNan);   // no vz
+  publish_and_settle(MissionCommand::ACCELERATION_3D, kNan, 0.5F, 0.1F, kNan);  // no az
 
   EXPECT_FALSE(latestHeartbeat().has_command_stream);
   EXPECT_EQ(fake_px4_->velocitySetpointCount(), 0U);
