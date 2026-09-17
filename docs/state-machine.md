@@ -60,8 +60,9 @@ Offboard control (`HOLD`, `MISSION`, takeoff ascent, return home):
   current altitude.
 - `MISSION` streams the mission command (horizontal velocity or acceleration)
   while it is fresh, at the altitude latched on entering `MISSION`. When the
-  stream goes stale the drone holds its last position and stays in `MISSION`
-  (`command_stream_valid=false`); nothing leaves `MISSION` automatically.
+  stream goes stale the drone holds its last position in `MISSION`
+  (`command_stream_valid=false`); after `command_loss_hold_s` without a command
+  it drops to `HOLD`, so a crashed mission node never leaves the drone in `MISSION`.
 - The emergency stop is the RC controller's kill switch. There is no emergency
   land topic.
 

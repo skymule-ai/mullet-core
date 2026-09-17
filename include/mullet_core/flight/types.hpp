@@ -53,6 +53,7 @@ struct ControlConfig
   double offboard_warmup_s{1.0};                // Setpoints streamed before requesting OFFBOARD.
   double command_retry_interval_s{1.0};         // Minimum gap between repeated PX4 VehicleCommand retries.
   double command_timeout_s{0.25};               // Max age before an external mission command goes stale.
+  double command_loss_hold_s{2.0};              // Stale MISSION stream this long drops to HOLD.
   double takeoff_acceptance_m{0.25};            // Altitude tolerance combined with hover tolerance for takeoffSettled().
   double takeoff_yaw_tolerance_rad{0.174533};   // ~10 degrees; max yaw error for a fixed-yaw takeoff to settle.
   double hover_yaw_rad{0.0};                    // Fallback hold yaw if current heading is non-finite.

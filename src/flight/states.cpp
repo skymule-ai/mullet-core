@@ -181,6 +181,16 @@ void DroneStateMachine::handleMission(const rclcpp::Time & t)
     if (!missionCommandIs3d()) {
       hover_z_ned_m_ = mission_z_ned_m;
     }
+    return;
+  }
+  // A mission that stops streaming (its node crashed or was restarted) must not keep MISSION
+  // forever: after command_loss_hold_s, counted from the later of the last command and entering
+  // MISSION, drop to HOLD on the hold target the stream left behind.
+  const auto last_sign_of_life = latest_command_.valid && latest_command_.stamp > state_enter_time_ ?
+    latest_command_.stamp : state_enter_time_;
+  if ((t - last_sign_of_life).seconds() >= config_.command_loss_hold_s) {
+    RCLCPP_WARN(get_logger(), "Mission command stream lost for %.1f s", config_.command_loss_hold_s);
+    transitionTo(DroneState::kHold, "mission command stream lost");
   }
 }
 

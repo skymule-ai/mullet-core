@@ -112,7 +112,7 @@ real once `buildHeartbeatMessage()` assigns it, and this node owns the
 - `ACCELERATION`: horizontal NED acceleration only.
 - `TRAJECTORY_3D` / `VELOCITY_3D` / `ACCELERATION_3D`: the same on all three axes; `vz` is clamped by `max_vz_ned_mps`, the vertical position lead by `max_z_position_lead_m`, and a feedforward sets all three axes or none.
 
-Accelerations are clamped per axis by `max_accel_ned_mps2`. In the planar modes the z components must be NaN: the altitude stays at the value latched on entering `MISSION`. In the 3D modes z is commanded, and the hold target follows the drone's altitude. A NaN yaw faces the commanded horizontal velocity in the trajectory and velocity modes and keeps the hold heading in the acceleration modes. Commands with an unset mode, a finite z in a planar mode, or missing fields for their mode are rejected. Commands older than `command_timeout_s` are ignored and the drone holds its last position; commands outside `MISSION` are latched but never streamed.
+Accelerations are clamped per axis by `max_accel_ned_mps2`. In the planar modes the z components must be NaN: the altitude stays at the value latched on entering `MISSION`. In the 3D modes z is commanded, and the hold target follows the drone's altitude. A NaN yaw faces the commanded horizontal velocity in the trajectory and velocity modes and keeps the hold heading in the acceleration modes. Commands with an unset mode, a finite z in a planar mode, or missing fields for their mode are rejected. Commands older than `command_timeout_s` are ignored and the drone holds its last position; after `command_loss_hold_s` (2 s) without one it leaves `MISSION` for `HOLD`; commands outside `MISSION` are latched but never streamed.
 
 ## Build
 

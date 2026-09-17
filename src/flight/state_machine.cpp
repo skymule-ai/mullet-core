@@ -137,6 +137,7 @@ void DroneStateMachine::loadParameters()
   declare_and_clamp("offboard_warmup_s", config_.offboard_warmup_s, 1.0);
   declare_and_clamp("command_retry_interval_s", config_.command_retry_interval_s, 0.1);
   declare_and_clamp("command_timeout_s", config_.command_timeout_s, 0.0);
+  declare_and_clamp("command_loss_hold_s", config_.command_loss_hold_s, 0.0);
   declare_and_clamp("takeoff_acceptance_m", config_.takeoff_acceptance_m, 0.05);
   declare_and_clamp("takeoff_yaw_tolerance_rad", config_.takeoff_yaw_tolerance_rad, 0.0);
   config_.hover_yaw_rad = declare_parameter<double>("hover_yaw_rad", config_.hover_yaw_rad);
