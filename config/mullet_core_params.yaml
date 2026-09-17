@@ -36,6 +36,8 @@
     # their 3D variants TRAJECTORY_3D / VELOCITY_3D / ACCELERATION_3D, which command z too.
     command_topic: "command"
     command_timeout_s: 0.25
+    # A stream stale for this long (mission node crashed or restarted) leaves MISSION for HOLD.
+    command_loss_hold_s: 2.0
 
     # Safety clamps for MISSION commands, per NED axis.
     max_vx_ned_mps: 1.0

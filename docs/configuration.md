@@ -18,6 +18,7 @@ run separate `mullet_core` deployments for multiple drones.
 | `offboard_warmup_s` | `1.0` | Proof-of-life warmup before requesting Offboard. Clamped to at least `1.0`. |
 | `command_retry_interval_s` | `1.0` | Retry interval for PX4 vehicle commands. Clamped to at least `0.1`. |
 | `command_timeout_s` | `0.25` | Freshness window for `MISSION` commands. |
+| `command_loss_hold_s` | `2.0` | A `MISSION` stream stale this long (counted from the last command or entering `MISSION`) drops to `HOLD`. |
 | `takeoff_acceptance_m` | `0.25` | Takeoff altitude acceptance used with hover altitude tolerance. |
 | `takeoff_yaw_tolerance_rad` | `0.174533` | Yaw error tolerance for explicit-yaw takeoff completion. |
 | `hover_yaw_rad` | `0.0` | Fallback hold yaw when current heading is unavailable. |

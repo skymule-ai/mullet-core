@@ -873,7 +873,7 @@ TEST_F(DroneStateMachineBehavior, MissionFollowsCommandsAndHoldStopsIt)
   }));
 }
 
-TEST_F(DroneStateMachineBehavior, StaleStreamInMissionHoldsPositionWithoutLeavingMission)
+TEST_F(DroneStateMachineBehavior, StaleStreamInMissionHoldsPositionThenDropsToHold)
 {
   enterMission();
 
@@ -886,6 +886,8 @@ TEST_F(DroneStateMachineBehavior, StaleStreamInMissionHoldsPositionWithoutLeavin
     const auto setpoint = fake_px4_->latestSetpoint();
     return std::isfinite(setpoint.position[0]) && std::isfinite(setpoint.position[2]);
   }));
+  // command_loss_hold_s (2 s) after the last command, the drone leaves MISSION on its own.
+  EXPECT_TRUE(waitForState("HOLD", 4s));
   EXPECT_EQ(fake_px4_->commandCount(VehicleCommand::VEHICLE_CMD_NAV_LAND), 0U);
 }
 
