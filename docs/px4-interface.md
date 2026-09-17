@@ -52,8 +52,10 @@ component. Unset components are NaN, so axes can mix:
 | State | position | velocity | acceleration |
 | --- | --- | --- | --- |
 | hold, takeoff, return home | x, y, z | NaN | NaN |
+| `MISSION`, `TRAJECTORY` | x, y, z (held) | vx, vy, NaN | ax, ay, NaN or NaN |
 | `MISSION`, `VELOCITY` | NaN, NaN, z | vx, vy, NaN | ax, ay, NaN or NaN |
 | `MISSION`, `ACCELERATION` | NaN, NaN, z | NaN | ax, ay, NaN |
+| `MISSION`, `TRAJECTORY_3D` | x, y, z | vx, vy, vz | ax, ay, az or NaN |
 | `MISSION`, `VELOCITY_3D` | NaN | vx, vy, vz | ax, ay, az or NaN |
 | `MISSION`, `ACCELERATION_3D` | NaN | NaN | ax, ay, az |
 
@@ -64,6 +66,8 @@ Invalid commands (unset mode, finite z in a planar mode, or non-finite fields th
 mode needs) are rejected before entering the latest command. Accepted commands are
 interpreted in the PX4 NED world frame; velocities are clamped by `max_vx_ned_mps`,
 `max_vy_ned_mps` and `max_vz_ned_mps`, accelerations per axis by
-`max_accel_ned_mps2`. In the planar modes the z position is the altitude latched on
+`max_accel_ned_mps2`. In the `TRAJECTORY` modes the position is clamped to lead
+the drone by at most `max_xy_position_lead_m` horizontally and `max_z_position_lead_m`
+vertically, measured from the drone's current position. In the planar modes the z position is the altitude latched on
 entering `MISSION`; in the 3D modes the command drives z, and a stale stream holds
 the altitude the drone has at that moment.

@@ -181,26 +181,50 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() 
 bool DroneStateMachine::missionCommandIs3d() const
 {
   return latest_command_.mode == MissionCommand::VELOCITY_3D ||
-         latest_command_.mode == MissionCommand::ACCELERATION_3D;
+         latest_command_.mode == MissionCommand::ACCELERATION_3D ||
+         latest_command_.mode == MissionCommand::TRAJECTORY_3D;
 }
 
 OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
 {
   const auto & command = latest_command_;
   const bool three_d = missionCommandIs3d();
-  const bool velocity_mode =
-    command.mode == MissionCommand::VELOCITY || command.mode == MissionCommand::VELOCITY_3D;
+  const bool trajectory_mode =
+    command.mode == MissionCommand::TRAJECTORY || command.mode == MissionCommand::TRAJECTORY_3D;
+  const bool velocity_mode = trajectory_mode || command.mode == MissionCommand::VELOCITY ||
+    command.mode == MissionCommand::VELOCITY_3D;
   Setpoint setpoint{};
   setpoint.active = true;
   // Planar modes hold the altitude latched on entering MISSION; 3D modes leave z to the command.
   setpoint.position = {kUnset, kUnset, three_d ? kUnset : hover_z_ned_m_};
+  if (trajectory_mode) {
+    // PX4 flies at its own speed limits toward a far position setpoint, so the command may only
+    // lead the drone by a bounded distance, measured from where the drone is.
+    const auto & current = px4_->localPosition();
+    if (current.xy_valid) {
+      float dx = command.x_ned_m - current.x;
+      float dy = command.y_ned_m - current.y;
+      const auto lead = std::hypot(dx, dy);
+      const auto max_lead = static_cast<float>(config_.max_xy_position_lead_m);
+      if (lead > max_lead) {
+        dx *= max_lead / lead;
+        dy *= max_lead / lead;
+      }
+      setpoint.position[0] = current.x + dx;
+      setpoint.position[1] = current.y + dy;
+    }
+    if (three_d && current.z_valid) {
+      setpoint.position[2] =
+        current.z + clampAbs(command.z_ned_m - current.z, config_.max_z_position_lead_m);
+    }
+  }
   if (velocity_mode) {
     setpoint.velocity = {
       clampAbs(command.vx_ned_mps, config_.max_vx_ned_mps),
       clampAbs(command.vy_ned_mps, config_.max_vy_ned_mps),
       three_d ? clampAbs(command.vz_ned_mps, config_.max_vz_ned_mps) : kUnset};
   }
-  // ACCELERATION modes always carry it; VELOCITY modes only as optional feedforward.
+  // ACCELERATION modes always carry it; TRAJECTORY and VELOCITY modes only as feedforward.
   if (std::isfinite(command.ax_ned_mps2)) {
     setpoint.acceleration = {
       clampAbs(command.ax_ned_mps2, config_.max_accel_ned_mps2),
