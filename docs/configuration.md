@@ -25,6 +25,8 @@ run separate `mullet_core` deployments for multiple drones.
 | `max_vy_ned_mps` | `1.0` | `MISSION` command clamp for NED Y velocity. Clamped to at least `0`. |
 | `max_vz_ned_mps` | `0.5` | `MISSION` command clamp for NED Z velocity (3D modes). Clamped to at least `0`. |
 | `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED acceleration. Clamped to at least `0`. |
+| `max_xy_position_lead_m` | `1.0` | `TRAJECTORY` modes: farthest the position setpoint may lead the drone horizontally. Clamped to at least `0`. |
+| `max_z_position_lead_m` | `0.5` | `TRAJECTORY_3D`: farthest the position setpoint may lead the drone vertically. Clamped to at least `0`. |
 | `timing_log_period_s` | `1.0` | Timing diagnostic log period. |
 | `min_takeoff_altitude_m` | `0.5` | Minimum accepted takeoff altitude. |
 | `max_takeoff_altitude_m` | `10.0` | Maximum accepted takeoff altitude. |

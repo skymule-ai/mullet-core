@@ -2,6 +2,7 @@
 #include "mullet_core/px4/topic_utils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -584,6 +585,19 @@ protected:
     command_pub_->publish(command);
   }
 
+  void publishTrajectoryCommand(
+    std::uint8_t mode, const std::array<float, 3> & position_ned_m,
+    const std::array<float, 3> & velocity_ned_mps)
+  {
+    MissionCommand command{};
+    command.mode = mode;
+    command.position_ned_m = position_ned_m;
+    command.velocity_ned_mps = velocity_ned_mps;
+    command.acceleration_ned_mps2 = {kNan, kNan, kNan};
+    command.yaw_ned_rad = kNan;
+    command_pub_->publish(command);
+  }
+
   void publishVelocityCommand(float vx_ned_mps, float vy_ned_mps)
   {
     publishCommand(MissionCommand::VELOCITY, vx_ned_mps, vy_ned_mps, kNan, kNan);
@@ -952,6 +966,45 @@ TEST_F(DroneStateMachineBehavior, Acceleration3dModeStreamsClampedAccelerationOn
   }));
 }
 
+TEST_F(DroneStateMachineBehavior, TrajectoryModeStreamsPositionWithFeedforwardAtHeldAltitude)
+{
+  enterMission();
+
+  publishTrajectoryCommand(MissionCommand::TRAJECTORY, {0.5F, -0.3F, kNan}, {0.2F, -0.1F, kNan});
+  // Position and velocity feedforward on x and y; the altitude held at the takeoff target.
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::fabs(setpoint.position[0] - 0.5F) < 1e-6F &&
+             std::fabs(setpoint.position[1] + 0.3F) < 1e-6F &&
+             std::fabs(setpoint.position[2] + 2.0F) < 1e-3F &&
+             std::fabs(setpoint.velocity[0] - 0.2F) < 1e-6F && std::isnan(setpoint.velocity[2]) &&
+             std::isnan(setpoint.acceleration[0]);
+    });
+  }));
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawControlMode([](const OffboardControlMode & mode) {
+      return mode.position && mode.velocity && !mode.acceleration;
+    });
+  }));
+}
+
+TEST_F(DroneStateMachineBehavior, Trajectory3dPositionLeadIsClampedFromTheDrone)
+{
+  enterMission();
+
+  // The drone is at (0, 0, -2); the command asks for 5 m north and 2 m up.
+  publishTrajectoryCommand(MissionCommand::TRAJECTORY_3D, {5.0F, 0.0F, -4.0F}, {0.2F, 0.0F, -2.0F});
+  // max_xy_position_lead_m 1.0 and max_z_position_lead_m 0.5; vz clamped by max_vz_ned_mps.
+  EXPECT_TRUE(waitFor([this]() {
+    return fake_px4_->sawSetpoint([](const TrajectorySetpoint & setpoint) {
+      return std::fabs(setpoint.position[0] - 1.0F) < 1e-3F &&
+             std::fabs(setpoint.position[1]) < 1e-3F &&
+             std::fabs(setpoint.position[2] + 2.5F) < 1e-3F &&
+             std::fabs(setpoint.velocity[2] + 0.5F) < 1e-6F;
+    });
+  }));
+}
+
 TEST_F(DroneStateMachineBehavior, Stale3dStreamHoldsTheCurrentAltitude)
 {
   enterMission();
@@ -985,6 +1038,12 @@ TEST_F(DroneStateMachineBehavior, MalformedMissionCommandsAreNeverLatched)
   publish_and_settle(MissionCommand::ACCELERATION, 0.2F, kNan, kNan, kNan);  // no acceleration
   publish_and_settle(MissionCommand::VELOCITY_3D, 0.2F, kNan, kNan, kNan);   // no vz
   publish_and_settle(MissionCommand::ACCELERATION_3D, kNan, 0.5F, 0.1F, kNan);  // no az
+  publishTrajectoryCommand(MissionCommand::TRAJECTORY, {kNan, 0.0F, kNan}, {0.2F, 0.0F, kNan});
+  std::this_thread::sleep_for(60ms);  // no x position
+  publishTrajectoryCommand(MissionCommand::TRAJECTORY, {1.0F, 0.0F, -3.0F}, {0.2F, 0.0F, kNan});
+  std::this_thread::sleep_for(60ms);  // z commanded in a planar mode
+  publishTrajectoryCommand(MissionCommand::TRAJECTORY_3D, {1.0F, 0.0F, kNan}, {0.2F, 0.0F, 0.1F});
+  std::this_thread::sleep_for(60ms);  // no z position
 
   EXPECT_FALSE(latestHeartbeat().has_command_stream);
   EXPECT_EQ(fake_px4_->velocitySetpointCount(), 0U);

@@ -20,11 +20,15 @@ enum class DroneState : std::uint8_t
 };
 
 // Latest valid mullet_interfaces/msg/MissionCommand, in NED. `mode` is one of its mode
-// constants; z is NaN in the planar modes, the acceleration is NaN when a VELOCITY command has
-// no feedforward, and the yaw is NaN when the command leaves heading to mullet_core.
+// constants; z is NaN in the planar modes, the position is read only in the TRAJECTORY modes,
+// the acceleration is NaN when a command has no feedforward, and the yaw is NaN when the
+// command leaves heading to mullet_core.
 struct LatchedCommand
 {
   std::uint8_t mode{0};
+  float x_ned_m{0.0F};
+  float y_ned_m{0.0F};
+  float z_ned_m{0.0F};
   float vx_ned_mps{0.0F};
   float vy_ned_mps{0.0F};
   float vz_ned_mps{0.0F};
@@ -56,6 +60,8 @@ struct ControlConfig
   double max_vy_ned_mps{1.0};                   // Clamp applied to MISSION vy commands.
   double max_vz_ned_mps{0.5};                   // Clamp applied to MISSION vz commands (3D modes).
   double max_accel_ned_mps2{3.0};               // Per-axis clamp applied to MISSION acceleration commands.
+  double max_xy_position_lead_m{1.0};           // Farthest a TRAJECTORY position may lead the drone horizontally.
+  double max_z_position_lead_m{0.5};            // Farthest a TRAJECTORY_3D position may lead the drone vertically.
   double timing_log_period_s{1.0};              // Interval between periodic tick-jitter log lines.
   double min_takeoff_altitude_m{0.5};           // Lower bound enforced on Takeoff goal altitude_m.
   double max_takeoff_altitude_m{10.0};          // Upper bound enforced on Takeoff goal altitude_m.

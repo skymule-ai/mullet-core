@@ -144,6 +144,8 @@ void DroneStateMachine::loadParameters()
   declare_and_clamp("max_vy_ned_mps", config_.max_vy_ned_mps, 0.0);
   declare_and_clamp("max_vz_ned_mps", config_.max_vz_ned_mps, 0.0);
   declare_and_clamp("max_accel_ned_mps2", config_.max_accel_ned_mps2, 0.0);
+  declare_and_clamp("max_xy_position_lead_m", config_.max_xy_position_lead_m, 0.0);
+  declare_and_clamp("max_z_position_lead_m", config_.max_z_position_lead_m, 0.0);
   declare_and_clamp("timing_log_period_s", config_.timing_log_period_s, 0.25);
   declare_and_clamp("min_takeoff_altitude_m", config_.min_takeoff_altitude_m, 0.1);
   declare_and_clamp(

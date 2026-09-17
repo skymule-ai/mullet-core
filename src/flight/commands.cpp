@@ -11,23 +11,49 @@ using MissionCommand = mullet_interfaces::msg::MissionCommand;
 
 // Why `msg` must not be latched, or nullptr when it is valid. Every mode needs the fields it
 // tracks finite on its axes. Planar modes keep z NaN because mullet_core holds the altitude;
-// 3D modes command z too.
+// 3D modes command z too. The position is only read, and so only checked, in TRAJECTORY modes.
 const char * commandRejectReason(const MissionCommand & msg)
 {
+  const auto & position = msg.position_ned_m;
   const auto & velocity = msg.velocity_ned_mps;
   const auto & acceleration = msg.acceleration_ned_mps2;
   if (std::isinf(msg.yaw_ned_rad)) {
     return "yaw_ned_rad must be finite or NaN";
   }
-  const bool three_d =
-    msg.mode == MissionCommand::VELOCITY_3D || msg.mode == MissionCommand::ACCELERATION_3D;
+  const bool trajectory =
+    msg.mode == MissionCommand::TRAJECTORY || msg.mode == MissionCommand::TRAJECTORY_3D;
+  const bool three_d = msg.mode == MissionCommand::VELOCITY_3D ||
+    msg.mode == MissionCommand::ACCELERATION_3D || msg.mode == MissionCommand::TRAJECTORY_3D;
+  const bool position_set = std::isfinite(position[0]) && std::isfinite(position[1]);
   const bool velocity_set = std::isfinite(velocity[0]) && std::isfinite(velocity[1]);
   const bool acceleration_set = std::isfinite(acceleration[0]) && std::isfinite(acceleration[1]);
   const bool acceleration_unset = std::isnan(acceleration[0]) && std::isnan(acceleration[1]);
-  if (!three_d && (!std::isnan(velocity[2]) || !std::isnan(acceleration[2]))) {
+  if (!three_d && (!std::isnan(velocity[2]) || !std::isnan(acceleration[2]) ||
+    (trajectory && !std::isnan(position[2]))))
+  {
     return "z must be NaN in planar modes: mullet_core holds the altitude";
   }
   switch (msg.mode) {
+    case MissionCommand::TRAJECTORY:
+      if (!position_set || !velocity_set) {
+        return "TRAJECTORY needs a finite horizontal position and velocity";
+      }
+      if (!acceleration_set && !acceleration_unset) {
+        return "acceleration feedforward must set both horizontal axes or neither";
+      }
+      return nullptr;
+    case MissionCommand::TRAJECTORY_3D:
+      if (!position_set || !std::isfinite(position[2]) || !velocity_set ||
+        !std::isfinite(velocity[2]))
+      {
+        return "TRAJECTORY_3D needs a finite position and velocity on all three axes";
+      }
+      if (!(acceleration_set && std::isfinite(acceleration[2])) &&
+        !(acceleration_unset && std::isnan(acceleration[2])))
+      {
+        return "acceleration feedforward must set all three axes or none";
+      }
+      return nullptr;
     case MissionCommand::VELOCITY:
       if (!velocity_set) {
         return "VELOCITY needs a finite horizontal velocity";
@@ -52,7 +78,7 @@ const char * commandRejectReason(const MissionCommand & msg)
       return acceleration_set && std::isfinite(acceleration[2]) ? nullptr :
              "ACCELERATION_3D needs a finite acceleration on all three axes";
     default:
-      return "mode must be VELOCITY, ACCELERATION, VELOCITY_3D or ACCELERATION_3D";
+      return "mode must be TRAJECTORY, VELOCITY, ACCELERATION or one of their _3D variants";
   }
 }
 }  // namespace
@@ -66,6 +92,9 @@ void DroneStateMachine::onCommand(const MissionCommand::SharedPtr msg)
   }
 
   latest_command_.mode = msg->mode;
+  latest_command_.x_ned_m = msg->position_ned_m[0];
+  latest_command_.y_ned_m = msg->position_ned_m[1];
+  latest_command_.z_ned_m = msg->position_ned_m[2];
   latest_command_.vx_ned_mps = msg->velocity_ned_mps[0];
   latest_command_.vy_ned_mps = msg->velocity_ned_mps[1];
   latest_command_.vz_ned_mps = msg->velocity_ned_mps[2];

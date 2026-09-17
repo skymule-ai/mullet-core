@@ -30,9 +30,10 @@
     return_home_speed_mps: 2.0
     return_home_acceptance_m: 0.5
 
-    # MISSION command stream: mullet_interfaces/msg/MissionCommand, mode VELOCITY (optional
-    # acceleration feedforward) or ACCELERATION, planar with the altitude held at the MISSION
-    # entry value, or their 3D variants VELOCITY_3D / ACCELERATION_3D, which command z too.
+    # MISSION command stream: mullet_interfaces/msg/MissionCommand, mode TRAJECTORY (position
+    # with velocity and optional acceleration feedforward), VELOCITY (optional acceleration
+    # feedforward) or ACCELERATION, planar with the altitude held at the MISSION entry value, or
+    # their 3D variants TRAJECTORY_3D / VELOCITY_3D / ACCELERATION_3D, which command z too.
     command_topic: "command"
     command_timeout_s: 0.25
 
@@ -41,6 +42,10 @@
     max_vy_ned_mps: 1.0
     max_vz_ned_mps: 0.5
     max_accel_ned_mps2: 3.0
+    # How far a TRAJECTORY position may lead the drone; with PX4's position gains near 1 this
+    # also bounds the speed PX4 adds to correct the tracking error.
+    max_xy_position_lead_m: 1.0
+    max_z_position_lead_m: 0.5
 
     # Low-frequency control-loop timing diagnostics.
     timing_log_period_s: 1.0
