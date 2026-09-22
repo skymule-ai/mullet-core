@@ -39,10 +39,12 @@
     # A stream stale for this long (mission node crashed or restarted) leaves MISSION for HOLD.
     command_loss_hold_s: 2.0
 
-    # Safety clamps for MISSION commands, per NED axis.
-    max_vx_ned_mps: 1.0
-    max_vy_ned_mps: 1.0
-    max_vz_ned_mps: 0.5
+    # Safety clamps for MISSION commands, per NED axis. A backstop about 0.5 m/s above what
+    # the mission frameworks fly (the ergodic field scene: 1.5 m/s, 0.5 m/s vertical), so it
+    # only acts when a framework misbehaves; well inside what an X500 V2 flies steadily.
+    max_vx_ned_mps: 2.0
+    max_vy_ned_mps: 2.0
+    max_vz_ned_mps: 0.75
     max_accel_ned_mps2: 3.0
     # How far a TRAJECTORY position may lead the drone; with PX4's position gains near 1 this
     # also bounds the speed PX4 adds to correct the tracking error.
