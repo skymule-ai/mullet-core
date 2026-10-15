@@ -53,7 +53,7 @@ colcon test --packages-select mullet_core --pytest-args -k "launch"
 
 Three gtest binaries (`test_vehicle_instance`, `test_state_machine_helpers`, `test_drone_state_machine_behavior`) plus one pytest suite (`test_mullet_core_launch.py`, tests YAML-derived launch configuration). `test_drone_state_machine_behavior.cpp` is a black-box behavioral suite that drives the node through a fake PX4 peer over real ROS 2 topics — it does not touch internal classes directly, so it keeps validating new components automatically as long as topic names/message types/QoS are preserved.
 
-There is no ROS 2 on the host: build and test inside the `ghcr.io/skymule-ai/px4-sitl` image with `../mullet_sitl_sim/ws/install` (built `px4_msgs`) sourced as an underlay and the sibling `mullet-interfaces` built alongside.
+There is no ROS 2 on the host: build and test inside the `ghcr.io/skymule-ai/px4-sitl` image with `../mullet-sim/ws/install` (built `px4_msgs`) sourced as an underlay and the sibling `mullet-interfaces` built alongside.
 
 No linter or CI is configured in this repo (no `.clang-format`, `.clang-tidy`, or `.github/workflows`) — don't assume tooling that isn't there.
 

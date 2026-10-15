@@ -50,4 +50,4 @@ colcon test-result --verbose
 
 There is no ROS 2 on a plain host checkout; the SITL image
 (`ghcr.io/skymule-ai/px4-sitl`) has ROS and a built `px4_msgs` underlay in the
-sibling `mullet_sitl_sim/ws`.
+sibling `mullet-sim/ws`.

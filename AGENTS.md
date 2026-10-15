@@ -59,7 +59,7 @@ Do not assume tooling that is not present.
 For SITL work, use the sibling repo:
 
 ```sh
-cd /home/mattia/WORKSPACE/mullet_sitl_sim
+cd /home/mattia/WORKSPACE/MULLET/mullet-sim
 ./run.sh
 ./stop.sh
 ```
