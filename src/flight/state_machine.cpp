@@ -69,6 +69,7 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   paddock_heartbeat_ = std::make_unique<PaddockHeartbeatPublisher>(
     *this, config_.heartbeat_topic, config_.heartbeat_rate_hz,
     [this]() {return buildHeartbeatMessage();});
+  localization_status_ = std::make_unique<LocalizationStatusPublisher>(*this, fmu_prefix, drone_id_);
 
   RCLCPP_INFO(
     get_logger(),

@@ -24,6 +24,10 @@ PX4 topics use best-effort, transient-local QoS with keep-last depth `1`.
 | subscribe | `/fmu/out/vehicle_local_position_v1` | `/<prefix>_N/fmu/out/vehicle_local_position_v1` |
 | subscribe | `/fmu/out/vehicle_status_v1` | `/<prefix>_N/fmu/out/vehicle_status_v1` |
 | subscribe | `/fmu/out/vehicle_land_detected` | `/<prefix>_N/fmu/out/vehicle_land_detected` |
+| subscribe | `/fmu/out/estimator_status_flags` | `/<prefix>_N/fmu/out/estimator_status_flags` |
+
+`estimator_status_flags` is read by `LocalizationStatusPublisher`, not `Px4Interface`: it only
+feeds `/mullet/localization_status` and drives no transition.
 
 PX4 names the topic of a message whose `MESSAGE_VERSION` is above 0 `<topic>_v<version>`.
 The node builds every name from the px4_msgs constant (`px4Topic(prefix, suffix, version)`), so the
