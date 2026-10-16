@@ -146,6 +146,19 @@ cp .env.example .env   # ROS_DOMAIN_ID, PX4 UART device and baud
 docker compose up -d --build
 ```
 
+The drone computer must start Docker only after its Wi-Fi has an address:
+
+```bash
+sudo systemctl enable NetworkManager-wait-online.service
+```
+
+Fast DDS (agent and ROS nodes alike) reads the host's addresses once, at process start. A
+process started before DHCP does not know the Wi-Fi address is its own, so it sends to onboard
+peers through that address instead of loopback: whenever the Wi-Fi drops, its topics stop
+onboard too (the agent's `/fmu/out/*` stopped for the whole drop plus ~5 s). Without
+`NetworkManager-wait-online`, `network-online.target` is reached at once and Docker starts the
+containers ~3 s before DHCP. A drone booted out of Wi-Fi range waits ~30 s, then starts anyway.
+
 Both containers restart on boot. `config/mullet_core_params.yaml` is mounted read-only:
 edit it, then `docker compose restart mullet_core`. PX4's `UXRCE_DDS_DOM_ID` must equal
 `ROS_DOMAIN_ID`, and the base image's `px4_msgs` must match the firmware's messages.

@@ -3,6 +3,8 @@
 #   docker compose up -d --build
 # Needs the mullet-interfaces checkout next to this repo. config/mullet_core_params.yaml is
 # mounted: edit it, then `docker compose restart mullet_core`.
+# The host must have NetworkManager-wait-online enabled (README, Drone Deployment): a container
+# started before the Wi-Fi address exists loses its onboard topics whenever the Wi-Fi drops.
 x-ros: &ros
   network_mode: host
   ipc: host  # Fast DDS shared memory between the agent and core containers
