@@ -11,6 +11,7 @@
 #include "mullet_core/flight/types.hpp"
 #include "mullet_core/px4/offboard_heartbeat_publisher.hpp"
 #include "mullet_core/px4/px4_interface.hpp"
+#include "mullet_core/telemetry/localization_status_publisher.hpp"
 #include "mullet_core/telemetry/paddock_heartbeat_publisher.hpp"
 #include "mullet_interfaces/action/land.hpp"
 #include "mullet_interfaces/action/return_home.hpp"
@@ -184,6 +185,7 @@ private:
   std::unique_ptr<Px4Interface> px4_;
   std::unique_ptr<OffboardHeartbeatPublisher> offboard_heartbeat_;
   std::unique_ptr<PaddockHeartbeatPublisher> paddock_heartbeat_;
+  std::unique_ptr<LocalizationStatusPublisher> localization_status_;
   LatchedCommand latest_command_{};
 
   DroneState state_{DroneState::kIdle};

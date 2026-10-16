@@ -38,9 +38,11 @@ mullet_core_node
 │   ├── publishes OffboardControlMode and TrajectorySetpoint
 │   ├── owns its own timer at control_rate_hz (minimum 2 Hz)
 │   └── pulls the current setpoint from the state machine each tick
-└── PaddockHeartbeatPublisher
-    ├── publishes DroneHeartbeat on /mullet/heartbeat
-    └── owns its own timer at heartbeat_rate_hz
+├── PaddockHeartbeatPublisher
+│   ├── publishes DroneHeartbeat on /mullet/heartbeat
+│   └── owns its own timer at heartbeat_rate_hz
+└── LocalizationStatusPublisher
+    └── republishes EstimatorStatusFlags as LocalizationStatus on /mullet/localization_status, 1 Hz
 ```
 
 The Offboard proof-of-life stream is owned by `OffboardHeartbeatPublisher` on its
@@ -71,6 +73,7 @@ PX4 topics use PX4-compatible QoS: best effort, transient local, keep last depth
 | subscribe | `/fmu/out/vehicle_local_position_v1` | `Px4Interface` |
 | subscribe | `/fmu/out/vehicle_status_v1` | `Px4Interface` |
 | subscribe | `/fmu/out/vehicle_land_detected` | `Px4Interface` |
+| subscribe | `/fmu/out/estimator_status_flags` | `LocalizationStatusPublisher` |
 
 Names are for PX4 1.17: a message with `MESSAGE_VERSION` above 0 gets a `_v<N>` suffix, taken
 from the px4_msgs constants the build uses (see `docs/px4-interface.md`).
@@ -94,6 +97,11 @@ telemetry-presence and validity flags, local position and yaw, WGS84 lat/lon/alt
 the command paths, and a `can_*` capability flag per command. The `can_*` flags come
 from the same predicates that accept or reject a real command, so a client that
 respects them will not be rejected on eligibility grounds.
+
+`mullet_interfaces/msg/LocalizationStatus` goes on `/mullet/localization_status` at 1 Hz, keyed by
+`drone_id`: which sources EKF2 fuses (GNSS, vision position/velocity/yaw, compass, baro, range finder),
+yaw alignment and dead reckoning, from PX4's `estimator_status_flags`. The Paddock shows the active
+localization profile from it. Nothing is published until the first flags arrive.
 
 `px4_failsafe` mirrors PX4's own `VehicleStatus.failsafe` flag. It is reported for
 observability and does not drive any state transition in this node.

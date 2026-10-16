@@ -26,6 +26,7 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/states.cpp
   src/flight/timing.cpp
   src/px4/offboard_heartbeat_publisher.cpp
+  src/telemetry/localization_status_publisher.cpp
   src/telemetry/paddock_heartbeat_publisher.cpp
   src/px4/px4_interface.cpp
 )
@@ -108,6 +109,17 @@ if(BUILD_TESTING)
     mullet_interfaces
     px4_msgs
     std_srvs
+  )
+
+  ament_add_gtest(test_localization_status
+    test/test_localization_status.cpp
+    src/telemetry/localization_status_publisher.cpp
+  )
+  mullet_core_configure_gtest(test_localization_status)
+  ament_target_dependencies(test_localization_status
+    rclcpp
+    mullet_interfaces
+    px4_msgs
   )
 
   ament_add_pytest_test(test_mullet_core_launch
