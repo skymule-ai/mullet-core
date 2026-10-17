@@ -22,9 +22,9 @@ run separate `mullet_core` deployments for multiple drones.
 | `takeoff_acceptance_m` | `0.25` | Takeoff altitude acceptance used with hover altitude tolerance. |
 | `takeoff_yaw_tolerance_rad` | `0.174533` | Yaw error tolerance for explicit-yaw takeoff completion. |
 | `hover_yaw_rad` | `0.0` | Fallback hold yaw when current heading is unavailable. |
-| `max_vx_ned_mps` | `1.0` | `MISSION` command clamp for NED X velocity. Clamped to at least `0`. |
-| `max_vy_ned_mps` | `1.0` | `MISSION` command clamp for NED Y velocity. Clamped to at least `0`. |
-| `max_vz_ned_mps` | `0.5` | `MISSION` command clamp for NED Z velocity (3D modes). Clamped to at least `0`. |
+| `max_vx_ned_mps` | `1.0` (YAML ships `2.0`) | `MISSION` command clamp for NED X velocity. Clamped to at least `0`. |
+| `max_vy_ned_mps` | `1.0` (YAML ships `2.0`) | `MISSION` command clamp for NED Y velocity. Clamped to at least `0`. |
+| `max_vz_ned_mps` | `0.5` (YAML ships `0.75`) | `MISSION` command clamp for NED Z velocity (3D modes). Clamped to at least `0`. |
 | `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED acceleration. Clamped to at least `0`. |
 | `max_xy_position_lead_m` | `1.0` | `TRAJECTORY` modes: farthest the position setpoint may lead the drone horizontally. Clamped to at least `0`. |
 | `max_z_position_lead_m` | `0.5` | `TRAJECTORY_3D`: farthest the position setpoint may lead the drone vertically. Clamped to at least `0`. |
