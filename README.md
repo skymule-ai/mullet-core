@@ -144,7 +144,7 @@ Run a separate deployment with its own YAML configuration for each drone.
 ## Drone Deployment
 
 `docker/` runs `mullet_core` and the PX4 uXRCE-DDS agent on the drone computer, on top of
-`mullet-ros2-base`. The image build compiles `mullet_interfaces` (from the sibling
+`mullet-base`. The image build compiles `mullet_interfaces` (from the sibling
 `mullet-interfaces` checkout) and `mullet_core`, and runs this package's tests: a failing
 test means no image.
 
