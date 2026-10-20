@@ -167,6 +167,31 @@ onboard too (the agent's `/fmu/out/*` stopped for the whole drop plus ~5 s). Wit
 `NetworkManager-wait-online`, `network-online.target` is reached at once and Docker starts the
 containers ~3 s before DHCP. A drone booted out of Wi-Fi range waits ~30 s, then starts anyway.
 
+To reach the drone over a cable straight from a laptop (no router, no DHCP), keep its wired
+port up on its IPv6 link-local address, and keep it asking for DHCP so a router still gives it
+an IPv4 address:
+
+```bash
+sudo nmcli con mod "Wired connection 1" ipv6.method link-local ipv4.may-fail yes ipv4.dhcp-timeout 2147483647
+sudo reboot
+```
+
+By default the port gives up when DHCP gets no answer (~45 s) and drops all its addresses. The
+laptop needs no change: its own port has a link-local address too. Read the drone's address once,
+on the drone with `ip -6 addr show enP8p1s0` (the `fe80::` one; it differs per drone and
+stays the same), and save it as an ssh alias, with the `%` before the laptop's interface name
+doubled in `~/.ssh/config`:
+
+```
+Host mullet1-cable
+    HostName fe80::38dd:61a8:137c:357f%%enp0s31f6
+    User mullet
+```
+
+Plugging and unplugging that cable does not touch onboard topics: the containers run Fast DDS
+on IPv4 only (`FASTDDS_BUILTIN_TRANSPORTS=UDPv4`), and the cable adds only an IPv6 address.
+Reboot rather than re-activating the connection, so every container starts on the new addresses.
+
 Both containers restart on boot. `config/mullet_core_params.yaml` is mounted read-only:
 edit it, then `docker compose restart mullet_core`. PX4's `UXRCE_DDS_DOM_ID` must equal
 `ROS_DOMAIN_ID`, and the base image's `px4_msgs` must match the firmware's messages.
