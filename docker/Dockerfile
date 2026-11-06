@@ -2,7 +2,7 @@
 # Micro XRCE-DDS Agent) plus mullet_interfaces and mullet_core, built and unit-tested at image
 # build time, so a red test means no image. Build through compose.yaml, which supplies the
 # mullet_interfaces context from the sibling checkout.
-ARG BASE_IMAGE=ghcr.io/skymule-ai/mullet-base:v0.5.1
+ARG BASE_IMAGE=ghcr.io/skymule-ai/mullet-base:v0.6.0
 FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /opt/mullet_ws
