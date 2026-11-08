@@ -23,8 +23,6 @@ services:
       dockerfile: docker/Dockerfile
       additional_contexts:
         mullet_interfaces: ../../mullet-interfaces
-      args:
-        BASE_IMAGE: ${BASE_IMAGE:-ghcr.io/skymule-ai/mullet-base:v0.6.0}
     image: mullet-core:latest
     container_name: mullet-core
     volumes:
@@ -32,7 +30,7 @@ services:
 
   xrce_agent:
     <<: *ros
-    image: ${BASE_IMAGE:-ghcr.io/skymule-ai/mullet-base:v0.6.0}
+    image: ghcr.io/skymule-ai/mullet-base:v0.6.0  # same base as docker/Dockerfile
     container_name: mullet-xrce-agent
     devices:
       - ${PX4_UART_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1
