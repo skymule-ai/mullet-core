@@ -54,6 +54,20 @@ def test_load_launch_config_rejects_non_integer_instance(tmp_path):
     with pytest.raises(ValueError, match="vehicle_instance must be an integer"):
         LAUNCH._load_launch_config(str(config_path))
 
+def test_instance_from_env_overrides_yaml():
+    assert LAUNCH._instance_from_env(0, {"INDEX": "1"}) == 1
+    assert LAUNCH._instance_from_env(3, {}) == 3
+    assert LAUNCH._instance_from_env(3, {"INDEX": ""}) == 3
+    assert LAUNCH._instance_to_namespace(LAUNCH._instance_from_env(0, {"INDEX": "1"}), "uav") == "/uav_1"
+
+
+def test_instance_from_env_rejects_bad_values():
+    with pytest.raises(ValueError, match="must be an integer"):
+        LAUNCH._instance_from_env(0, {"INDEX": "uav_1"})
+    with pytest.raises(ValueError, match=r"vehicle_instance must be in \[0, 254\]"):
+        LAUNCH._instance_from_env(0, {"INDEX": "300"})
+
+
 def test_load_launch_config_requires_vehicle_instance(tmp_path):
     config_path = _write_config(tmp_path, {"px4_namespace_prefix": "uav"})
 

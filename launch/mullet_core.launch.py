@@ -47,6 +47,19 @@ def _load_launch_config(config_path: str) -> tuple[int, str]:
     raise RuntimeError(f"YAML config '{config_path}' must define vehicle_instance")
 
 
+def _instance_from_env(instance: int, env=os.environ) -> int:
+    """INDEX from /etc/mullet/drone.env (the container's env_file) overrides the YAML's vehicle_instance."""
+    value = env.get("INDEX", "").strip()
+    if not value:
+        return instance
+    try:
+        override = int(value)
+    except ValueError:
+        raise ValueError(f"INDEX={value!r} (drone.env) must be an integer") from None
+    _validate_instance(override)
+    return override
+
+
 def _instance_to_namespace(instance: int, namespace_prefix: str) -> str:
     return "" if instance == 0 or not namespace_prefix else f"/{namespace_prefix}_{instance}"
 
@@ -55,6 +68,7 @@ def generate_launch_description() -> LaunchDescription:
     package_share = get_package_share_directory("mullet_core")
     config_path = os.path.join(package_share, "config", "mullet_core_params.yaml")
     instance, namespace_prefix = _load_launch_config(config_path)
+    instance = _instance_from_env(instance)
 
     return LaunchDescription(
         [
@@ -65,7 +79,7 @@ def generate_launch_description() -> LaunchDescription:
                 name=f"mullet_core_{instance}",
                 namespace=_instance_to_namespace(instance, namespace_prefix),
                 output="screen",
-                parameters=[config_path],
+                parameters=[config_path, {"vehicle_instance": instance}],
             ),
         ]
     )

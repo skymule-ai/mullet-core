@@ -9,7 +9,7 @@ run separate `mullet_core` deployments for multiple drones.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `vehicle_instance` | `0` | PX4 instance ID. Instance `0` uses `/fmu/...`; instance `N` uses `/<px4_namespace_prefix>_N/fmu/...`. |
+| `vehicle_instance` | `0` | PX4 instance ID. Instance `0` uses `/fmu/...`; instance `N` uses `/<px4_namespace_prefix>_N/fmu/...`. On a drone, `INDEX` in `/etc/mullet/drone.env` (the container's environment) overrides it. |
 | `px4_namespace_prefix` | `uav` | FMU topic namespace prefix, also the node namespace for instance `N > 0`. |
 | `drone_id` | `""` | Heartbeat `drone_id`; empty means `uav_<vehicle_instance>`. |
 | `heartbeat_topic` | `/mullet/heartbeat` | Paddock heartbeat topic. |
