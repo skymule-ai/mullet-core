@@ -1,7 +1,8 @@
 /**:
   ros__parameters:
     # PX4 instance number. instance 0 uses /fmu/... topics; instance N uses /<prefix>_N/fmu/...
-    # On a drone, INDEX in /etc/mullet/drone.env overrides it (every drone is namespaced: mullet<N> = N).
+    # On a drone, DRONE_ID=uav_N in /etc/mullet/drone.env overrides vehicle_instance, px4_namespace_prefix
+    # and drone_id (every drone is namespaced: mullet<N> = uav_N).
     vehicle_instance: 0
     px4_namespace_prefix: "uav"
     drone_id: ""

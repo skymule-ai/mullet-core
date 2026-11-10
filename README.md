@@ -139,7 +139,8 @@ ros2 launch mullet_core mullet_core.launch.py
 The launch file reads its complete configuration from
 `config/mullet_core_params.yaml`; it accepts no launch arguments.
 Set `vehicle_instance` and `px4_namespace_prefix` in that YAML before launch. On a drone,
-`INDEX` in `/etc/mullet/drone.env` overrides `vehicle_instance`: every drone is namespaced, mullet<N>
+`DRONE_ID=uav_N` in `/etc/mullet/drone.env` overrides `vehicle_instance`, `px4_namespace_prefix` and
+`drone_id`: every drone is namespaced, mullet<N>
 is instance N with PX4 topics under `/uav_N/fmu/...` and `MAV_SYS_ID` N+1.
 Run a separate deployment with its own YAML configuration for each drone.
 
