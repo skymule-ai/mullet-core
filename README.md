@@ -150,7 +150,7 @@ test means no image.
 
 ```bash
 cd docker
-cp .env.example .env   # ROS_DOMAIN_ID, PX4 UART device and baud
+cp .env.example .env   # PX4 UART device and baud; ROS_DOMAIN_ID is in /etc/mullet/drone.env
 docker compose up -d --build
 ```
 
@@ -194,7 +194,7 @@ Reboot rather than re-activating the connection, so every container starts on th
 
 Both containers restart on boot. `config/mullet_core_params.yaml` is mounted read-only:
 edit it, then `docker compose restart mullet_core`. PX4's `UXRCE_DDS_DOM_ID` must equal
-`ROS_DOMAIN_ID`, and the base image's `px4_msgs` must match the firmware's messages.
+`ROS_DOMAIN_ID` in `/etc/mullet/drone.env`, and the base image's `px4_msgs` must match the firmware's messages.
 
 ## Command Examples
 

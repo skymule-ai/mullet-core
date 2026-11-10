@@ -1,5 +1,5 @@
 # mullet_core and the PX4 uXRCE-DDS agent on the drone, both started on boot. From here:
-#   cp .env.example .env   # ROS domain and PX4 UART
+#   cp .env.example .env   # PX4 UART; the ROS domain comes from /etc/mullet/drone.env (mullet-setup)
 #   docker compose up -d --build
 # Needs the mullet-interfaces checkout next to this repo. config/mullet_core_params.yaml is
 # mounted: edit it, then `docker compose restart mullet_core`.
@@ -9,8 +9,12 @@ x-ros: &ros
   network_mode: host
   ipc: host  # Fast DDS shared memory between the agent and core containers
   restart: unless-stopped
+  # This drone's identity (ROS_DOMAIN_ID, DRONE_ID, ...), written by mullet-setup and shared by every
+  # Compose project on the Orin. Off the drone (SITL, a laptop), point MULLET_DRONE_ENV at a copy.
+  env_file:
+    - path: ${MULLET_DRONE_ENV:-/etc/mullet/drone.env}
+      required: true
   environment:
-    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:?set ROS_DOMAIN_ID in docker/.env}
     RMW_IMPLEMENTATION: rmw_fastrtps_cpp
     # Paddock (and ergodic) use UDPv4. Default Fast DDS SHM locators are invisible over WiFi.
     FASTDDS_BUILTIN_TRANSPORTS: UDPv4
