@@ -53,7 +53,7 @@ def _identity_from_env(instance: int, namespace_prefix: str, env=os.environ) -> 
 
     uav_N gives instance N, namespace prefix uav and drone_id uav_N, overriding the YAML, so the node's
     namespace, PX4 topics (/uav_N/fmu/...) and target system (N + 1) can't disagree with it. Unset
-    (SITL, tests): the YAML applies, drone_id "" (the node then uses <prefix>_<instance>).
+    (SITL, tests): the YAML applies, drone_id "" (the node then uses uav_<instance>).
     """
     drone_id = env.get("DRONE_ID", "").strip()
     if not drone_id:

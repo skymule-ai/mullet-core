@@ -18,6 +18,7 @@
 #include "mullet_interfaces/action/takeoff.hpp"
 #include "mullet_interfaces/msg/drone_heartbeat.hpp"
 #include "mullet_interfaces/msg/mission_command.hpp"
+#include "mullet_core/flight/config.hpp"
 
 namespace mullet_core::state_machine_detail
 {
@@ -55,8 +56,6 @@ private:
   using Trigger = std_srvs::srv::Trigger;
   using MissionCommand = mullet_interfaces::msg::MissionCommand;
 
-  // Declares all ROS parameters into `config_`/topic names, clamping each to a safe minimum.
-  void loadParameters();
   // Creates the external mission command subscription.
   void initializeSubscriptions();
   // Creates the three ROS action servers and the two Trigger services.
@@ -73,7 +72,7 @@ private:
   // Assembles the full `/mullet/heartbeat` snapshot (FSM state, PX4 status, position,
   // capability flags) from current node state.
   mullet_interfaces::msg::DroneHeartbeat buildHeartbeatMessage();
-  // Validates and latches an external mission command from `command_topic_`.
+  // Validates and latches an external mission command from the subscription callback.
   void onCommand(const MissionCommand::SharedPtr msg);
   // Trigger service bodies: start_mission (HOLD -> MISSION) and hold (MISSION or return home
   // -> HOLD). Both reject with the matching xRejectReason() as the response message.
@@ -217,9 +216,7 @@ private:
   float hover_yaw_rad_{0.0F};
   bool home_valid_{false};
 
-  std::string drone_id_{"uav_0"};
   std::uint64_t heartbeat_sequence_{0};
-  std::string command_topic_{"command"};
 
   std::unique_ptr<state_machine_detail::ActionLifecycleCoordinator> action_lifecycle_;
   bool takeoff_arm_requested_{false};

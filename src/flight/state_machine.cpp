@@ -48,12 +48,10 @@ std::string fmuPrefix(const ControlConfig & config)
 DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
 : Node("mullet_core", options)
 {
-  loadParameters();
+  config_ = loadConfig(*this);
 
   const auto fmu_prefix = fmuPrefix(config_);
   const auto target_system = targetSystemFromVehicleInstance(config_.vehicle_instance);
-  drone_id_ = config_.drone_id.empty() ?
-    "uav_" + std::to_string(config_.vehicle_instance) : config_.drone_id;
   px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix, target_system);
   offboard_heartbeat_ = std::make_unique<OffboardHeartbeatPublisher>(
     *this, fmu_prefix, config_.control_rate_hz, [this]() {return buildOffboardSetpoint();});
@@ -69,12 +67,12 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   paddock_heartbeat_ = std::make_unique<PaddockHeartbeatPublisher>(
     *this, config_.heartbeat_topic, config_.heartbeat_rate_hz,
     [this]() {return buildHeartbeatMessage();});
-  localization_status_ = std::make_unique<LocalizationStatusPublisher>(*this, fmu_prefix, drone_id_);
+  localization_status_ = std::make_unique<LocalizationStatusPublisher>(*this, fmu_prefix, config_.drone_id);
 
   RCLCPP_INFO(
     get_logger(),
     "mullet_core started: drone_id='%s' instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz heartbeat=%.1f Hz",
-    drone_id_.c_str(), config_.vehicle_instance, fmu_prefix.c_str(),
+    config_.drone_id.c_str(), config_.vehicle_instance, fmu_prefix.c_str(),
     static_cast<unsigned int>(target_system), config_.control_rate_hz,
     config_.heartbeat_rate_hz);
 }
@@ -84,7 +82,7 @@ DroneStateMachine::~DroneStateMachine() = default;
 void DroneStateMachine::initializeSubscriptions()
 {
   command_sub_ = create_subscription<MissionCommand>(
-    command_topic_, commandQoS(),
+    config_.command_topic, commandQoS(),
     [this](const MissionCommand::SharedPtr msg) {onCommand(msg);});
 }
 
@@ -119,54 +117,6 @@ void DroneStateMachine::initializeActionServers()
     });
 }
 
-// Declares every ROS parameter backing `config_`/topic names and clamps each to a safe minimum,
-// so a misconfigured launch file can't produce e.g. a zero control rate or an inverted altitude
-// range.
-void DroneStateMachine::loadParameters()
-{
-  const auto declare_and_clamp = [this](const char * name, double & value, double minimum) {
-      value = std::max(declare_parameter<double>(name, value), minimum);
-    };
-
-  config_.vehicle_instance = declare_parameter<int>("vehicle_instance", config_.vehicle_instance);
-  config_.px4_namespace_prefix = declare_parameter<std::string>(
-    "px4_namespace_prefix", config_.px4_namespace_prefix);
-  config_.drone_id = declare_parameter<std::string>("drone_id", config_.drone_id);
-  declare_and_clamp("control_rate_hz", config_.control_rate_hz, 2.0);
-  declare_and_clamp("heartbeat_rate_hz", config_.heartbeat_rate_hz, 1.0);
-  config_.heartbeat_topic = declare_parameter<std::string>("heartbeat_topic", config_.heartbeat_topic);
-  declare_and_clamp("offboard_warmup_s", config_.offboard_warmup_s, 1.0);
-  declare_and_clamp("command_retry_interval_s", config_.command_retry_interval_s, 0.1);
-  declare_and_clamp("command_timeout_s", config_.command_timeout_s, 0.0);
-  declare_and_clamp("command_loss_hold_s", config_.command_loss_hold_s, 0.0);
-  declare_and_clamp("takeoff_acceptance_m", config_.takeoff_acceptance_m, 0.05);
-  declare_and_clamp("takeoff_yaw_tolerance_rad", config_.takeoff_yaw_tolerance_rad, 0.0);
-  config_.hover_yaw_rad = declare_parameter<double>("hover_yaw_rad", config_.hover_yaw_rad);
-  declare_and_clamp("max_vx_ned_mps", config_.max_vx_ned_mps, 0.0);
-  declare_and_clamp("max_vy_ned_mps", config_.max_vy_ned_mps, 0.0);
-  declare_and_clamp("max_vz_ned_mps", config_.max_vz_ned_mps, 0.0);
-  declare_and_clamp("max_accel_ned_mps2", config_.max_accel_ned_mps2, 0.0);
-  declare_and_clamp("max_xy_position_lead_m", config_.max_xy_position_lead_m, 0.0);
-  declare_and_clamp("max_z_position_lead_m", config_.max_z_position_lead_m, 0.0);
-  declare_and_clamp("timing_log_period_s", config_.timing_log_period_s, 0.25);
-  declare_and_clamp("min_takeoff_altitude_m", config_.min_takeoff_altitude_m, 0.1);
-  declare_and_clamp(
-    "max_takeoff_altitude_m", config_.max_takeoff_altitude_m,
-    config_.min_takeoff_altitude_m);
-  declare_and_clamp("request_offboard_timeout_s", config_.request_offboard_timeout_s, 0.1);
-  declare_and_clamp("request_arm_timeout_s", config_.request_arm_timeout_s, 0.1);
-  declare_and_clamp("takeoff_timeout_s", config_.takeoff_timeout_s, 0.1);
-  declare_and_clamp("landing_timeout_s", config_.landing_timeout_s, 0.1);
-  declare_and_clamp("hover_altitude_tolerance_m", config_.hover_altitude_tolerance_m, 0.05);
-  declare_and_clamp(
-    "hover_vertical_velocity_tolerance_mps",
-    config_.hover_vertical_velocity_tolerance_mps, 0.01);
-  declare_and_clamp("hover_settle_time_s", config_.hover_settle_time_s, 0.0);
-  declare_and_clamp("return_home_speed_mps", config_.return_home_speed_mps, 0.1);
-  declare_and_clamp("return_home_acceptance_m", config_.return_home_acceptance_m, 0.05);
-  command_topic_ = declare_parameter<std::string>("command_topic", command_topic_);
-}
-
 // Assembles the full `/mullet/heartbeat` message from current PX4 telemetry, FSM state, and
 // action activity. Called once per heartbeat tick by PaddockHeartbeatPublisher; this is the sole
 // place the message content is populated, since it needs deep FSM-internal state.
@@ -181,7 +131,7 @@ mullet_interfaces::msg::DroneHeartbeat DroneStateMachine::buildHeartbeatMessage(
   msg.schema_version = 3;
   msg.stamp = current_time;
   msg.sequence = heartbeat_sequence_++;
-  msg.drone_id = drone_id_;
+  msg.drone_id = config_.drone_id;
   msg.vehicle_instance = static_cast<std::uint8_t>(config_.vehicle_instance);
   msg.target_system = targetSystemFromVehicleInstance(config_.vehicle_instance);
   msg.ros_namespace = ros_namespace;
