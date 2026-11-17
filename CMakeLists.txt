@@ -25,6 +25,7 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/setpoints.cpp
   src/flight/states.cpp
   src/flight/timing.cpp
+  src/flight/config.cpp
   src/px4/offboard_heartbeat_publisher.cpp
   src/telemetry/localization_status_publisher.cpp
   src/telemetry/paddock_heartbeat_publisher.cpp
