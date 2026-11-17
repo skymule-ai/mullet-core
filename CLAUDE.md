@@ -4,7 +4,7 @@ Guidance for AI coding sessions working in this repository.
 
 ## What this is
 
-`mullet_core` is a C++17 soft-real-time PX4 offboard supervisor for multicopter drones (single ROS 2 `ament_cmake` package). It is meant to be checked out inside a colcon workspace's `src/`, alongside two sibling repos:
+`mullet_core` is a C++20 soft-real-time PX4 offboard supervisor for multicopter drones (single ROS 2 `ament_cmake` package). It is meant to be checked out inside a colcon workspace's `src/`, alongside two sibling repos:
 
 - `mullet-interfaces` — shared ROS 2 action/msg IDL (`Takeoff`, `Land`, `ReturnHome` actions; `DroneHeartbeat` msg). `start_mission` and `hold` are `std_srvs/srv/Trigger` services with no IDL there. Required at build time (`<depend>mullet_interfaces</depend>`). It is the stack's wire contract, and this repo is its only producer: consumers propose a field or action there, and it becomes real when this node populates or serves it. Its `README.md` describes that request path.
 - `mullet-paddock` — the ground-station/fleet-management gateway that consumes `/mullet/heartbeat`. Unrelated to this repo's own build; only relevant when changing the heartbeat message contract.
