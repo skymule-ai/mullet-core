@@ -1,6 +1,6 @@
 # AGENTS.md (Repo Guide for Coding Agents)
 
-This repo is `mullet_core`, a C++17 ROS 2 `ament_cmake` package for soft
+This repo is `mullet_core`, a C++20 ROS 2 `ament_cmake` package for soft
 real-time PX4 offboard supervision of multicopter drones.
 
 ## Quick Orientation
@@ -76,7 +76,7 @@ named prefix.
 
 - Keep changes small and avoid drive-by formatting.
 - Do not revert existing user changes in a dirty worktree.
-- Use C++17 and keep `-Wall -Wextra -Wpedantic` clean.
+- Use C++20 and keep `-Wall -Wextra -Wpedantic` clean.
 - Header guards use `MULLET_CORE_..._HPP_`; do not introduce `#pragma once`.
 - Namespace is `mullet_core`; use `mullet_core::state_machine_detail` only for
   private state-machine helpers when needed.

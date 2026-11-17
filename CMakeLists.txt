@@ -35,7 +35,7 @@ add_executable(${PROJECT_NAME}_node
   src/node/main.cpp
   ${MULLET_CORE_NODE_SOURCES}
 )
-target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_17)
+target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_20)
 
 ament_target_dependencies(${PROJECT_NAME}_node
   rclcpp
@@ -75,7 +75,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
 
   function(mullet_core_configure_gtest target_name)
-    target_compile_features(${target_name} PUBLIC cxx_std_17)
+    target_compile_features(${target_name} PUBLIC cxx_std_20)
     target_include_directories(${target_name} PRIVATE
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
