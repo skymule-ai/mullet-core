@@ -28,7 +28,7 @@ run separate `mullet_core` deployments for multiple drones.
 | `max_accel_ned_mps2` | `3.0` | `MISSION` per-axis clamp for NED acceleration. Clamped to at least `0`. |
 | `max_xy_position_lead_m` | `1.0` | `TRAJECTORY` modes: farthest the position setpoint may lead the drone horizontally. Clamped to at least `0`. |
 | `max_z_position_lead_m` | `0.5` | `TRAJECTORY_3D`: farthest the position setpoint may lead the drone vertically. Clamped to at least `0`. |
-| `timing_log_period_s` | `1.0` | Timing diagnostic log period. |
+| `timing_log_period_s` | `1.0` | Period of the control-loop timing log: max tick jitter since the last line, and the cumulative count of ticks later than 1.5× the control period. Measured on the steady clock the control timer runs on, so it reports real-time scheduling even under `use_sim_time`. Clamped to at least `0.25`. |
 | `min_takeoff_altitude_m` | `0.5` | Minimum accepted takeoff altitude. |
 | `max_takeoff_altitude_m` | `10.0` | Maximum accepted takeoff altitude. |
 | `request_offboard_timeout_s` | `5.0` | Timeout while waiting for PX4 to report Offboard during takeoff. |

@@ -52,3 +52,16 @@ colcon test-result --verbose
 There is no ROS 2 on a plain host checkout; the SITL image
 (`ghcr.io/skymule-ai/px4-sitl`) has ROS and a built `px4_msgs` underlay in the
 sibling `mullet-sim/ws`.
+
+## In Docker
+
+Without a ROS 2 environment, build the deployment image from the repo root. It
+compiles `mullet_interfaces` from the sibling checkout and `mullet_core` in
+Release, then runs the whole suite. A failing test fails the build. The base
+image is arm64 only (the drone's Orin), so on an x86 machine the build runs
+under QEMU emulation (`qemu-user-static` / binfmt) and is slow:
+
+```bash
+docker build --platform linux/arm64 -f docker/Dockerfile \
+  --build-context mullet_interfaces=../mullet-interfaces .
+```
