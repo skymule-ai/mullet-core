@@ -13,6 +13,7 @@
 #include "mullet_core/telemetry/localization_status_publisher.hpp"
 #include "mullet_core/telemetry/paddock_heartbeat_publisher.hpp"
 #include "mullet_core/flight/mission_command.hpp"
+#include "mullet_core/flight/detail/tick_stats.hpp"
 #include "mullet_interfaces/action/land.hpp"
 #include "mullet_interfaces/action/return_home.hpp"
 #include "mullet_interfaces/action/takeoff.hpp"
@@ -160,12 +161,6 @@ private:
   // Resets the PX4 command retry timer to zero, so the next retriable command is sent
   // immediately.
   void resetVehicleCommandRetryTimer();
-  // Tracks worst-case tick jitter and counts ticks that ran more than 1.5x the expected period
-  // late, for the periodic timing log in maybeLogTiming().
-  void updateTimingStats(const rclcpp::Time & now);
-  // Logs accumulated jitter/missed-deadline stats at most once every `timing_log_period_s`, then
-  // resets the jitter accumulator.
-  void maybeLogTiming(const rclcpp::Time & now);
 
   // Human-readable names for the corresponding enum/PX4 status code, used in logs and the
   // heartbeat message; each returns "UNKNOWN" for an unrecognized value.
@@ -185,6 +180,8 @@ private:
 
   std::optional<LatchedCommand> latest_command_{};
 
+  state_machine_detail::TickStats tick_stats_;
+
   DroneState state_{DroneState::kIdle};
   DroneState previous_state_{DroneState::kIdle};
   rclcpp::Time state_enter_time_{};
@@ -192,11 +189,6 @@ private:
   Phase phase_{Phase::kWarmup};
   rclcpp::Time landing_start_time_{};
   rclcpp::Time last_vehicle_command_time_{};
-  rclcpp::Time last_tick_time_{};
-  rclcpp::Time last_timing_log_time_{};
-  double max_tick_jitter_ms_{0.0};
-  std::uint64_t missed_deadline_count_{0};
-  bool timing_initialized_{false};
   bool position_mode_requested_for_landing_{false};
   bool landing_timeout_reported_{false};
 

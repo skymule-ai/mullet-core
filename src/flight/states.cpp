@@ -57,6 +57,11 @@ void DroneStateMachine::handleTransition(const rclcpp::Time & t)
   }
 }
 
+bool DroneStateMachine::phaseTimedOut(const rclcpp::Time & current_time, double timeout_s) const
+{
+  return (current_time - phase_enter_time_).seconds() >= timeout_s;
+}
+
 void DroneStateMachine::handleTakingOff(const rclcpp::Time & t)
 {
   const float progress = phase_ == Phase::kWarmup ? kTakeoffProgressWarmup :

@@ -23,7 +23,6 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/predicates.cpp
   src/flight/setpoints.cpp
   src/flight/states.cpp
-  src/flight/timing.cpp
   src/flight/config.cpp
   src/flight/mission_command.cpp
   src/px4/offboard_heartbeat_publisher.cpp

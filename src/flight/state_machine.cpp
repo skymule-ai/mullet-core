@@ -62,7 +62,6 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
     std::chrono::duration<double>(1.0 / std::max(config_.control_rate_hz, 1.0)));
   state_enter_time_ = now();
-  last_timing_log_time_ = state_enter_time_;
   control_timer_ = create_wall_timer(period, [this]() {controlTick();});
   paddock_heartbeat_ = std::make_unique<PaddockHeartbeatPublisher>(
     *this, config_.heartbeat_topic, config_.heartbeat_rate_hz,
@@ -201,11 +200,12 @@ mullet_interfaces::msg::DroneHeartbeat DroneStateMachine::buildHeartbeatMessage(
 void DroneStateMachine::controlTick()
 {
   const auto current_time = now();
-  updateTimingStats(current_time);
+  const auto tick_time = std::chrono::steady_clock::now();  // steady: jitter only
+  tick_stats_.update(tick_time, config_.control_rate_hz);
   handleExternalOverride();
   handleActionCancellations();
   dispatchState(current_time);
-  maybeLogTiming(current_time);
+  tick_stats_.maybeLog(get_logger(), tick_time, config_.timing_log_period_s, stateName(state_));
 }
 
 void DroneStateMachine::handleExternalOverride()
