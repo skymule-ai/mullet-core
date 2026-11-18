@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_PX4_PX4_INTERFACE_HPP_
-#define MULLET_CORE_PX4_PX4_INTERFACE_HPP_
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -90,5 +89,3 @@ private:
 };
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_PX4_PX4_INTERFACE_HPP_

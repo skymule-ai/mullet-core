@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_PX4_OFFBOARD_HEARTBEAT_PUBLISHER_HPP_
-#define MULLET_CORE_PX4_OFFBOARD_HEARTBEAT_PUBLISHER_HPP_
+#pragma once
 
 #include <array>
 #include <functional>
@@ -67,5 +66,3 @@ private:
 };
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_PX4_OFFBOARD_HEARTBEAT_PUBLISHER_HPP_

@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_FLIGHT_DRONE_STATE_MACHINE_HPP_
-#define MULLET_CORE_FLIGHT_DRONE_STATE_MACHINE_HPP_
+#pragma once
 
 #include <memory>
 #include <string>
@@ -234,5 +233,3 @@ private:
 };
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_FLIGHT_DRONE_STATE_MACHINE_HPP_

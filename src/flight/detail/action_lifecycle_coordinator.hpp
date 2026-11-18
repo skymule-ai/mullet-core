@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_SRC_FLIGHT_DETAIL_ACTION_LIFECYCLE_COORDINATOR_HPP_
-#define MULLET_CORE_SRC_FLIGHT_DETAIL_ACTION_LIFECYCLE_COORDINATOR_HPP_
+#pragma once
 
 #include <memory>
 #include <string>
@@ -134,5 +133,3 @@ private:
 };
 
 }  // namespace mullet_core::state_machine_detail
-
-#endif  // MULLET_CORE_SRC_FLIGHT_DETAIL_ACTION_LIFECYCLE_COORDINATOR_HPP_

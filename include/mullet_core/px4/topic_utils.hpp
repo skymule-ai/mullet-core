@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_PX4_TOPIC_UTILS_HPP_
-#define MULLET_CORE_PX4_TOPIC_UTILS_HPP_
+#pragma once
 
 #include <algorithm>
 #include <chrono>
@@ -92,5 +91,3 @@ inline std::chrono::nanoseconds ratePeriod(double rate_hz, double min_hz)
 }
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_PX4_TOPIC_UTILS_HPP_
