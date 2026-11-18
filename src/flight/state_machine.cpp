@@ -152,14 +152,14 @@ mullet_interfaces::msg::DroneHeartbeat DroneStateMachine::buildHeartbeatMessage(
   msg.has_vehicle_status = has_vehicle_status;
   msg.has_local_position = px4_->hasLocalPosition();
   msg.has_land_detected = px4_->hasLandDetected();
-  msg.has_command_stream = latest_command_.valid;
+  msg.has_command_stream = latest_command_.has_value();
 
   msg.armed = px4_->isArmed();
   msg.offboard = px4_->isOffboard();
   msg.px4_failsafe = px4_->isFailsafe();
   msg.landed = px4_->isLanded();
   msg.local_position_valid = local_position_valid;
-  msg.command_stream_valid = commandFresh(current_time);
+  msg.command_stream_valid = commandFresh(latest_command_, current_time, config_.command_timeout_s);
 
   if (has_vehicle_status) {
     msg.px4_nav_state = px4_->vehicleStatus().nav_state;

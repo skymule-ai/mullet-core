@@ -12,6 +12,7 @@
 #include "mullet_core/px4/px4_interface.hpp"
 #include "mullet_core/telemetry/localization_status_publisher.hpp"
 #include "mullet_core/telemetry/paddock_heartbeat_publisher.hpp"
+#include "mullet_core/flight/mission_command.hpp"
 #include "mullet_interfaces/action/land.hpp"
 #include "mullet_interfaces/action/return_home.hpp"
 #include "mullet_interfaces/action/takeoff.hpp"
@@ -109,8 +110,6 @@ private:
   void handleReturnHome();
   void handleMission(const rclcpp::Time & now);
 
-  // Returns whether the last external mission command is still within `command_timeout_s`.
-  bool commandFresh(const rclcpp::Time & now) const;
   // Returns whether the vehicle has reached and held the takeoff target for
   // `hover_settle_time_s`, per position/velocity/yaw tolerances in `config_`.
   bool takeoffSettled(const rclcpp::Time & now);
@@ -148,8 +147,6 @@ private:
   // MISSION setpoint from the fresh latched command: its horizontal axes in the command's
   // mode, clamped, at the altitude held since entering MISSION.
   OffboardHeartbeatPublisher::Setpoint missionSetpoint() const;
-  // Whether the latched command is VELOCITY_3D or ACCELERATION_3D, i.e. it controls z.
-  bool missionCommandIs3d() const;
   // Publish feedback for the active goal of each action type (no-op if none is active).
   void publishTakeoffFeedback(float progress);
   void publishLandFeedback(const rclcpp::Time & now);
@@ -180,11 +177,13 @@ private:
   const char * activeActionName() const;
 
   ControlConfig config_{};
+
   std::unique_ptr<Px4Interface> px4_;
   std::unique_ptr<OffboardHeartbeatPublisher> offboard_heartbeat_;
   std::unique_ptr<PaddockHeartbeatPublisher> paddock_heartbeat_;
   std::unique_ptr<LocalizationStatusPublisher> localization_status_;
-  LatchedCommand latest_command_{};
+
+  std::optional<LatchedCommand> latest_command_{};
 
   DroneState state_{DroneState::kIdle};
   DroneState previous_state_{DroneState::kIdle};

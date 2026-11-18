@@ -175,10 +175,10 @@ void DroneStateMachine::handleMission(const rclcpp::Time & t)
   // then holds wherever the drone was, not where the mission started. In planar modes the
   // altitude stays latched from entering MISSION, since the command stream never controls it;
   // in 3D modes the stream moves z too, so the hold follows it.
-  if (commandFresh(t)) {
+  if (commandFresh(latest_command_, t, config_.command_timeout_s)) {
     const auto mission_z_ned_m = hover_z_ned_m_;
     latchHoverTarget();
-    if (!missionCommandIs3d()) {
+    if (!is3d(latest_command_->mode)) {
       hover_z_ned_m_ = mission_z_ned_m;
     }
     return;
@@ -186,8 +186,8 @@ void DroneStateMachine::handleMission(const rclcpp::Time & t)
   // A mission that stops streaming (its node crashed or was restarted) must not keep MISSION
   // forever: after command_loss_hold_s, counted from the later of the last command and entering
   // MISSION, drop to HOLD on the hold target the stream left behind.
-  const auto last_sign_of_life = latest_command_.valid && latest_command_.stamp > state_enter_time_ ?
-    latest_command_.stamp : state_enter_time_;
+  const auto last_sign_of_life = latest_command_ && latest_command_->stamp > state_enter_time_ ?
+    latest_command_->stamp : state_enter_time_;
   if ((t - last_sign_of_life).seconds() >= config_.command_loss_hold_s) {
     RCLCPP_WARN(get_logger(), "Mission command stream lost for %.1f s", config_.command_loss_hold_s);
     transitionTo(DroneState::kHold, "mission command stream lost");

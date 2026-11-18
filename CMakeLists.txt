@@ -17,7 +17,6 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/actions_goals.cpp
   src/flight/actions_feedback.cpp
   src/flight/actions_transitions.cpp
-  src/flight/commands.cpp
   src/flight/labels.cpp
   src/flight/state_machine.cpp
   src/flight/detail/helpers.cpp
@@ -26,6 +25,7 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/states.cpp
   src/flight/timing.cpp
   src/flight/config.cpp
+  src/flight/mission_command.cpp
   src/px4/offboard_heartbeat_publisher.cpp
   src/telemetry/localization_status_publisher.cpp
   src/telemetry/paddock_heartbeat_publisher.cpp

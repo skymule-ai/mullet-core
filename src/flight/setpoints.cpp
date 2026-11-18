@@ -165,7 +165,8 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() 
     case DroneState::kHold:
       return hold;
     case DroneState::kMission:
-      return commandFresh(now()) ? missionSetpoint() : hold;
+      return commandFresh(latest_command_, now(), config_.command_timeout_s) ?
+             missionSetpoint() : hold;
     case DroneState::kTransition:
       if (phase_ == Phase::kLanding) {
         return {};  // PX4 lands in AUTO_LAND; offboard setpoints would be ignored anyway.
@@ -178,32 +179,20 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() 
   return {};
 }
 
-bool DroneStateMachine::missionCommandIs3d() const
-{
-  return latest_command_.mode == MissionCommand::VELOCITY_3D ||
-         latest_command_.mode == MissionCommand::ACCELERATION_3D ||
-         latest_command_.mode == MissionCommand::TRAJECTORY_3D;
-}
-
 OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
 {
-  const auto & command = latest_command_;
-  const bool three_d = missionCommandIs3d();
-  const bool trajectory_mode =
-    command.mode == MissionCommand::TRAJECTORY || command.mode == MissionCommand::TRAJECTORY_3D;
-  const bool velocity_mode = trajectory_mode || command.mode == MissionCommand::VELOCITY ||
-    command.mode == MissionCommand::VELOCITY_3D;
+  const auto & command = *latest_command_;
   Setpoint setpoint{};
   setpoint.active = true;
   // Planar modes hold the altitude latched on entering MISSION; 3D modes leave z to the command.
-  setpoint.position = {kUnset, kUnset, three_d ? kUnset : hover_z_ned_m_};
-  if (trajectory_mode) {
+  setpoint.position = {kUnset, kUnset, is3d(command.mode) ? kUnset : hover_z_ned_m_};
+  if (isTrajectory(command.mode)) {
     // PX4 flies at its own speed limits toward a far position setpoint, so the command may only
     // lead the drone by a bounded distance, measured from where the drone is.
     const auto & current = px4_->localPosition();
     if (current.xy_valid) {
-      float dx = command.x_ned_m - current.x;
-      float dy = command.y_ned_m - current.y;
+      float dx = command.position[0] - current.x;
+      float dy = command.position[1] - current.y;
       const auto lead = std::hypot(dx, dy);
       const auto max_lead = static_cast<float>(config_.max_xy_position_lead_m);
       if (lead > max_lead) {
@@ -213,29 +202,29 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
       setpoint.position[0] = current.x + dx;
       setpoint.position[1] = current.y + dy;
     }
-    if (three_d && current.z_valid) {
+    if (is3d(command.mode) && current.z_valid) {
       setpoint.position[2] =
-        current.z + clampAbs(command.z_ned_m - current.z, config_.max_z_position_lead_m);
+        current.z + clampAbs(command.position[2] - current.z, config_.max_z_position_lead_m);
     }
   }
-  if (velocity_mode) {
+  if (carriesVelocity(command.mode)) {
     setpoint.velocity = {
-      clampAbs(command.vx_ned_mps, config_.max_vx_ned_mps),
-      clampAbs(command.vy_ned_mps, config_.max_vy_ned_mps),
-      three_d ? clampAbs(command.vz_ned_mps, config_.max_vz_ned_mps) : kUnset};
+      clampAbs(command.velocity[0], config_.max_vx_ned_mps),
+      clampAbs(command.velocity[1], config_.max_vy_ned_mps),
+      is3d(command.mode) ? clampAbs(command.velocity[2], config_.max_vz_ned_mps) : kUnset};
   }
   // ACCELERATION modes always carry it; TRAJECTORY and VELOCITY modes only as feedforward.
-  if (std::isfinite(command.ax_ned_mps2)) {
+  if (std::isfinite(command.acceleration[0])) {
     setpoint.acceleration = {
-      clampAbs(command.ax_ned_mps2, config_.max_accel_ned_mps2),
-      clampAbs(command.ay_ned_mps2, config_.max_accel_ned_mps2),
-      three_d ? clampAbs(command.az_ned_mps2, config_.max_accel_ned_mps2) : kUnset};
+      clampAbs(command.acceleration[0], config_.max_accel_ned_mps2),
+      clampAbs(command.acceleration[1], config_.max_accel_ned_mps2),
+      is3d(command.mode) ? clampAbs(command.acceleration[2], config_.max_accel_ned_mps2) : kUnset};
   }
   const auto vx = setpoint.velocity[0];
   const auto vy = setpoint.velocity[1];
   if (std::isfinite(command.yaw_rad)) {
     setpoint.yaw_rad = command.yaw_rad;
-  } else if (velocity_mode && std::hypot(vx, vy) > 1e-3F) {
+  } else if (carriesVelocity(command.mode) && std::hypot(vx, vy) > 1e-3F) {
     setpoint.yaw_rad = std::atan2(vy, vx);
   } else {
     setpoint.yaw_rad = hover_yaw_rad_;

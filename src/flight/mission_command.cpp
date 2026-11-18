@@ -1,3 +1,5 @@
+#include "mullet_core/flight/mission_command.hpp"
+
 #include "mullet_core/flight/drone_state_machine.hpp"
 
 #include <cmath>
@@ -7,8 +9,6 @@ namespace mullet_core
 
 namespace
 {
-using MissionCommand = mullet_interfaces::msg::MissionCommand;
-
 // Why `msg` must not be latched, or nullptr when it is valid. Every mode needs the fields it
 // tracks finite on its axes. Planar modes keep z NaN because mullet_core holds the altitude;
 // 3D modes command z too. The position is only read, and so only checked, in TRAJECTORY modes.
@@ -20,16 +20,12 @@ const char * commandRejectReason(const MissionCommand & msg)
   if (std::isinf(msg.yaw_ned_rad)) {
     return "yaw_ned_rad must be finite or NaN";
   }
-  const bool trajectory =
-    msg.mode == MissionCommand::TRAJECTORY || msg.mode == MissionCommand::TRAJECTORY_3D;
-  const bool three_d = msg.mode == MissionCommand::VELOCITY_3D ||
-    msg.mode == MissionCommand::ACCELERATION_3D || msg.mode == MissionCommand::TRAJECTORY_3D;
   const bool position_set = std::isfinite(position[0]) && std::isfinite(position[1]);
   const bool velocity_set = std::isfinite(velocity[0]) && std::isfinite(velocity[1]);
   const bool acceleration_set = std::isfinite(acceleration[0]) && std::isfinite(acceleration[1]);
   const bool acceleration_unset = std::isnan(acceleration[0]) && std::isnan(acceleration[1]);
-  if (!three_d && (!std::isnan(velocity[2]) || !std::isnan(acceleration[2]) ||
-    (trajectory && !std::isnan(position[2]))))
+  if (!is3d(msg.mode) && (!std::isnan(velocity[2]) || !std::isnan(acceleration[2]) ||
+    (isTrajectory(msg.mode) && !std::isnan(position[2]))))
   {
     return "z must be NaN in planar modes: mullet_core holds the altitude";
   }
@@ -83,6 +79,36 @@ const char * commandRejectReason(const MissionCommand & msg)
 }
 }  // namespace
 
+LatchedCommand fromMsg(const MissionCommand & msg, rclcpp::Time stamp)
+{
+  return {
+    .mode = msg.mode,
+    .position = msg.position_ned_m,
+    .velocity = msg.velocity_ned_mps,
+    .acceleration = msg.acceleration_ned_mps2,
+    .yaw_rad = msg.yaw_ned_rad,
+    .stamp = stamp,
+  };
+}
+
+bool is3d(std::uint8_t mode)
+{
+  return mode == MissionCommand::VELOCITY_3D ||
+         mode == MissionCommand::ACCELERATION_3D ||
+         mode == MissionCommand::TRAJECTORY_3D;
+}
+
+bool isTrajectory(std::uint8_t mode)
+{
+  return mode == MissionCommand::TRAJECTORY || mode == MissionCommand::TRAJECTORY_3D;
+}
+
+bool carriesVelocity(std::uint8_t mode)
+{
+  return isTrajectory(mode) ||
+         mode == MissionCommand::VELOCITY || mode == MissionCommand::VELOCITY_3D;
+}
+
 // Latches every valid command regardless of state; only MISSION ever streams it to PX4.
 void DroneStateMachine::onCommand(const MissionCommand::SharedPtr msg)
 {
@@ -91,25 +117,15 @@ void DroneStateMachine::onCommand(const MissionCommand::SharedPtr msg)
     return;
   }
 
-  latest_command_.mode = msg->mode;
-  latest_command_.x_ned_m = msg->position_ned_m[0];
-  latest_command_.y_ned_m = msg->position_ned_m[1];
-  latest_command_.z_ned_m = msg->position_ned_m[2];
-  latest_command_.vx_ned_mps = msg->velocity_ned_mps[0];
-  latest_command_.vy_ned_mps = msg->velocity_ned_mps[1];
-  latest_command_.vz_ned_mps = msg->velocity_ned_mps[2];
-  latest_command_.ax_ned_mps2 = msg->acceleration_ned_mps2[0];
-  latest_command_.ay_ned_mps2 = msg->acceleration_ned_mps2[1];
-  latest_command_.az_ned_mps2 = msg->acceleration_ned_mps2[2];
-  latest_command_.yaw_rad = msg->yaw_ned_rad;
-  latest_command_.stamp = now();
-  latest_command_.valid = true;
+  latest_command_ = fromMsg(*msg, now());
 }
 
-bool DroneStateMachine::commandFresh(const rclcpp::Time & current_time) const
+bool commandFresh(
+  const std::optional<LatchedCommand> & latest_command, const rclcpp::Time & current_time,
+  double command_timeout_s)
 {
-  return latest_command_.valid &&
-         (current_time - latest_command_.stamp).seconds() < config_.command_timeout_s;
+  return latest_command &&
+         (current_time - latest_command->stamp).seconds() < command_timeout_s;
 }
 
 }  // namespace mullet_core
