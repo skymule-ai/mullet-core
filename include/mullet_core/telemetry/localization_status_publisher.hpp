@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_TELEMETRY_LOCALIZATION_STATUS_PUBLISHER_HPP_
-#define MULLET_CORE_TELEMETRY_LOCALIZATION_STATUS_PUBLISHER_HPP_
+#pragma once
 
 #include <optional>
 #include <string>
@@ -47,5 +46,3 @@ private:
 };
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_TELEMETRY_LOCALIZATION_STATUS_PUBLISHER_HPP_

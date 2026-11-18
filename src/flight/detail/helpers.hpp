@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_SRC_DRONE_STATE_MACHINE_HELPERS_HPP_
-#define MULLET_CORE_SRC_DRONE_STATE_MACHINE_HELPERS_HPP_
+#pragma once
 
 #include <rclcpp/time.hpp>
 
@@ -31,5 +30,3 @@ GlobalPosition localToGlobal(
   double x_north_m, double y_east_m, double z_down_m);
 
 }  // namespace mullet_core::state_machine_detail
-
-#endif  // MULLET_CORE_SRC_DRONE_STATE_MACHINE_HELPERS_HPP_

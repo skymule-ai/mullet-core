@@ -62,7 +62,7 @@ No linter or CI is configured in this repo (no `.clang-format`, `.clang-tidy`, o
 
 Existing conventions (follow these for any C++ you touch):
 
-- Header guards `#ifndef MULLET_CORE_..._HPP_` / `#define ...` (not `#pragma once`).
+- `#pragma once` as the first line of every header (not `#ifndef` guards).
 - Namespace `mullet_core`; `mullet_core::state_machine_detail` is reserved for private state-machine helpers.
 - PascalCase classes (`DroneStateMachine`, `Px4Interface`), camelCase methods (`loadConfig()`, `controlTick()`), `snake_case_` member variables with a trailing underscore (`state_`, `command_buffer_`), `k`-prefixed PascalCase for enum values and free constants (`DroneState::kInit`, `kMinVehicleInstance`).
 - `std::unique_ptr` for ownership, explicit constructors, `override` on virtual overrides, `-Wall -Wextra -Wpedantic` must stay clean.

@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_FLIGHT_TYPES_HPP_
-#define MULLET_CORE_FLIGHT_TYPES_HPP_
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -41,5 +40,3 @@ struct LatchedCommand
 };
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_FLIGHT_TYPES_HPP_

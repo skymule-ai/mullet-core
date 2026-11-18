@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_
-#define MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_
+#pragma once
 
 #include <cstdint>
 #include <stdexcept>
@@ -46,5 +45,3 @@ inline std::uint8_t targetSystemFromVehicleInstance(int vehicle_instance)
 }
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_PX4_VEHICLE_INSTANCE_HPP_

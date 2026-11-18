@@ -1,5 +1,4 @@
-#ifndef MULLET_CORE_FLIGHT_CONFIG_HPP_
-#define MULLET_CORE_FLIGHT_CONFIG_HPP_
+#pragma once
 
 #include <string>
 
@@ -58,5 +57,3 @@ struct ControlConfig
 [[nodiscard]] ControlConfig loadConfig(rclcpp::Node & node);
 
 }  // namespace mullet_core
-
-#endif  // MULLET_CORE_FLIGHT_CONFIG_HPP_
