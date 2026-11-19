@@ -15,8 +15,8 @@ bool DroneStateMachine::shouldRecoverThroughLanding() const
 }
 
 // Reasons a Takeoff goal would be rejected right now, or nullptr if eligible. Single source of
-// truth shared by canTakeoff() (the heartbeat's can_takeoff flag) and handleTakeoffGoal() - the
-// goal-parameter checks (altitude range, yaw) stay in handleTakeoffGoal since they need the goal.
+// truth shared by canTakeoff() (the heartbeat's can_takeoff flag) and takeoffGoalRejectReason(),
+// which adds the goal-parameter checks (altitude range, yaw) since those need the goal.
 const char * DroneStateMachine::takeoffRejectReason() const
 {
   if (state_ != DroneState::kIdle) {

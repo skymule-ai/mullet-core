@@ -14,6 +14,7 @@
 #include "mullet_core/telemetry/paddock_heartbeat_publisher.hpp"
 #include "mullet_core/flight/mission_command.hpp"
 #include "mullet_core/flight/detail/tick_stats.hpp"
+#include "mullet_core/flight/detail/action_server.hpp"
 #include "mullet_interfaces/action/land.hpp"
 #include "mullet_interfaces/action/return_home.hpp"
 #include "mullet_interfaces/action/takeoff.hpp"
@@ -21,10 +22,6 @@
 #include "mullet_interfaces/msg/mission_command.hpp"
 #include "mullet_core/flight/config.hpp"
 
-namespace mullet_core::state_machine_detail
-{
-class ActionLifecycleCoordinator;
-}  // namespace mullet_core::state_machine_detail
 
 namespace mullet_core
 {
@@ -49,11 +46,8 @@ private:
     kWarmup, kRequestOffboard, kRequestArm, kAscent, kLanding, kReturnHome,
   };
   using Land = mullet_interfaces::action::Land;
-  using GoalHandleLand = rclcpp_action::ServerGoalHandle<Land>;
   using ReturnHome = mullet_interfaces::action::ReturnHome;
-  using GoalHandleReturnHome = rclcpp_action::ServerGoalHandle<ReturnHome>;
   using Takeoff = mullet_interfaces::action::Takeoff;
-  using GoalHandleTakeoff = rclcpp_action::ServerGoalHandle<Takeoff>;
   using Trigger = std_srvs::srv::Trigger;
   using MissionCommand = mullet_interfaces::msg::MissionCommand;
 
@@ -80,24 +74,11 @@ private:
   void onStartMission(Trigger::Response & response);
   void onHold(Trigger::Response & response);
 
-  // Goal/cancel/accepted callbacks for the three ROS actions. Goal callbacks reject with a
-  // RCLCPP_WARN reason and never mutate state; accepted callbacks run the transition.
-  rclcpp_action::GoalResponse handleTakeoffGoal(
-    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Takeoff::Goal> goal);
-  rclcpp_action::CancelResponse handleTakeoffCancel(
-    const std::shared_ptr<GoalHandleTakeoff> goal_handle);
-  void handleTakeoffAccepted(const std::shared_ptr<GoalHandleTakeoff> goal_handle);
-  rclcpp_action::GoalResponse handleLandGoal(
-    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Land::Goal> goal);
-  // Land is never cancelable once accepted: a committed landing always runs to completion.
-  rclcpp_action::CancelResponse handleLandCancel(
-    const std::shared_ptr<GoalHandleLand> goal_handle);
-  void handleLandAccepted(const std::shared_ptr<GoalHandleLand> goal_handle);
-  rclcpp_action::GoalResponse handleReturnHomeGoal(
-    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const ReturnHome::Goal> goal);
-  rclcpp_action::CancelResponse handleReturnHomeCancel(
-    const std::shared_ptr<GoalHandleReturnHome> goal_handle);
-  void handleReturnHomeAccepted(const std::shared_ptr<GoalHandleReturnHome> goal_handle);
+  // Returns a human-readable reason for rejecting a takeoff goal, or nullptr if it is valid.
+  const char * takeoffGoalRejectReason(const Takeoff::Goal & goal) const;
+  void onTakeoffAccepted(const Takeoff::Goal & goal);
+  void onLandAccepted(const Land::Goal & goal);
+  void onReturnHomeAccepted(const ReturnHome::Goal & goal);
 
   // Moves the FSM to `new_state`, logging `reason`; a no-op when already there.
   void transitionTo(DroneState new_state, const char * reason);
@@ -208,16 +189,17 @@ private:
 
   std::uint64_t heartbeat_sequence_{0};
 
-  std::unique_ptr<state_machine_detail::ActionLifecycleCoordinator> action_lifecycle_;
+  std::unique_ptr<state_machine_detail::ActionServer<Takeoff>> takeoff_action_;
+  std::unique_ptr<state_machine_detail::ActionServer<Land>> land_action_;
+  std::unique_ptr<state_machine_detail::ActionServer<ReturnHome>> return_home_action_;
+
   bool takeoff_arm_requested_{false};
   bool active_takeoff_uses_current_yaw_{true};
   float active_takeoff_target_yaw_rad_{0.0F};
   rclcpp::Time hover_settle_start_time_{};
 
   rclcpp::Subscription<MissionCommand>::SharedPtr command_sub_;
-  rclcpp_action::Server<Takeoff>::SharedPtr takeoff_action_server_;
-  rclcpp_action::Server<Land>::SharedPtr land_action_server_;
-  rclcpp_action::Server<ReturnHome>::SharedPtr return_home_action_server_;
+
   rclcpp::Service<Trigger>::SharedPtr start_mission_service_;
   rclcpp::Service<Trigger>::SharedPtr hold_service_;
   rclcpp::TimerBase::SharedPtr control_timer_;
