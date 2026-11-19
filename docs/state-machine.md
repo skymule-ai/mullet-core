@@ -74,4 +74,4 @@ Offboard control (`HOLD`, `MISSION`, takeoff ascent, return home):
 - Command eligibility: `src/flight/predicates.cpp`
 - Target latching, takeoff settling, and setpoint assembly: `src/flight/setpoints.cpp`
 - State, phase, and PX4 labels: `src/flight/labels.cpp`
-- Action goal ownership and terminal results: `src/flight/detail/action_lifecycle_coordinator.hpp`
+- Action servers, goal ownership and terminal results: `include/mullet_core/flight/detail/action_server.hpp`; per-action rules and accept handlers: `src/flight/actions.cpp`

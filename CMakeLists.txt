@@ -14,9 +14,7 @@ find_package(px4_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 set(MULLET_CORE_NODE_SOURCES
-  src/flight/actions_goals.cpp
-  src/flight/actions_feedback.cpp
-  src/flight/actions_transitions.cpp
+  src/flight/actions.cpp
   src/flight/labels.cpp
   src/flight/state_machine.cpp
   src/flight/detail/helpers.cpp

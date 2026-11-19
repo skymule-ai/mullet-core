@@ -1,7 +1,6 @@
 #include "mullet_core/flight/drone_state_machine.hpp"
 #include "mullet_core/px4/vehicle_instance.hpp"
 
-#include "flight/detail/action_lifecycle_coordinator.hpp"
 #include "flight/detail/helpers.hpp"
 
 #include <algorithm>
@@ -55,7 +54,6 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   px4_ = std::make_unique<Px4Interface>(*this, fmu_prefix, target_system);
   offboard_heartbeat_ = std::make_unique<OffboardHeartbeatPublisher>(
     *this, fmu_prefix, config_.control_rate_hz, [this]() {return buildOffboardSetpoint();});
-  action_lifecycle_ = std::make_unique<state_machine_detail::ActionLifecycleCoordinator>();
 
   initializeSubscriptions();
   initializeActionServers();
@@ -87,23 +85,24 @@ void DroneStateMachine::initializeSubscriptions()
 
 void DroneStateMachine::initializeActionServers()
 {
-  takeoff_action_server_ = rclcpp_action::create_server<Takeoff>(
-    this, "takeoff",
-    std::bind(&DroneStateMachine::handleTakeoffGoal, this, std::placeholders::_1, std::placeholders::_2),
-    std::bind(&DroneStateMachine::handleTakeoffCancel, this, std::placeholders::_1),
-    std::bind(&DroneStateMachine::handleTakeoffAccepted, this, std::placeholders::_1));
-  land_action_server_ = rclcpp_action::create_server<Land>(
-    this, "land",
-    std::bind(&DroneStateMachine::handleLandGoal, this, std::placeholders::_1, std::placeholders::_2),
-    std::bind(&DroneStateMachine::handleLandCancel, this, std::placeholders::_1),
-    std::bind(&DroneStateMachine::handleLandAccepted, this, std::placeholders::_1));
-  return_home_action_server_ = rclcpp_action::create_server<ReturnHome>(
-    this, "return_home",
-    std::bind(
-      &DroneStateMachine::handleReturnHomeGoal, this, std::placeholders::_1,
-      std::placeholders::_2),
-    std::bind(&DroneStateMachine::handleReturnHomeCancel, this, std::placeholders::_1),
-    std::bind(&DroneStateMachine::handleReturnHomeAccepted, this, std::placeholders::_1));
+  takeoff_action_ = std::make_unique<state_machine_detail::ActionServer<Takeoff>>(
+    *this, "takeoff",
+    [this](const Takeoff::Goal & goal) {return takeoffGoalRejectReason(goal);},
+    [this](const Takeoff::Goal & goal) {onTakeoffAccepted(goal);},
+    true);
+
+  land_action_ = std::make_unique<state_machine_detail::ActionServer<Land>>(
+    *this, "land",
+    [this](const Land::Goal &) {return landRejectReason();},
+    [this](const Land::Goal & goal) {onLandAccepted(goal);},
+    false); // A committed landing always runs to completion.
+
+  return_home_action_ = std::make_unique<state_machine_detail::ActionServer<ReturnHome>>(
+    *this, "return_home",
+    [this](const ReturnHome::Goal &) {return returnHomeRejectReason();},
+    [this](const ReturnHome::Goal & goal) {onReturnHomeAccepted(goal);},
+    true);
+
   start_mission_service_ = create_service<Trigger>(
     "start_mission",
     [this](const std::shared_ptr<Trigger::Request>, std::shared_ptr<Trigger::Response> response) {
@@ -218,8 +217,8 @@ void DroneStateMachine::handleExternalOverride()
     return;
   }
   if (px4_->isDisarmed()) {
-    action_lifecycle_->takeoff().abort("Takeoff aborted: vehicle disarmed externally");
-    action_lifecycle_->returnHome().abort("Return home aborted: vehicle disarmed externally");
+    takeoff_action_->abort("Takeoff aborted: vehicle disarmed externally");
+    return_home_action_->abort("Return home aborted: vehicle disarmed externally");
     transitionTo(DroneState::kIdle, "PX4 disarmed externally");
     return;
   }
@@ -227,20 +226,20 @@ void DroneStateMachine::handleExternalOverride()
     // Keep the hold target on the vehicle while the pilot flies, so re-entering offboard holds
     // in place instead of flying back to a stale setpoint.
     latchHoverTarget();
-    action_lifecycle_->takeoff().abort("Takeoff aborted: PX4 left offboard");
-    action_lifecycle_->returnHome().abort("Return home aborted: PX4 left offboard");
+    takeoff_action_->abort("Takeoff aborted: PX4 left offboard");
+    return_home_action_->abort("Return home aborted: PX4 left offboard");
     transitionTo(DroneState::kHold, "PX4 left offboard; pilot has control");
   }
 }
 
 void DroneStateMachine::handleActionCancellations()
 {
-  if (action_lifecycle_->takeoff().cancelRequested()) {
-    action_lifecycle_->takeoff().cancel("Takeoff canceled");
+  if (takeoff_action_->cancelRequested()) {
+    takeoff_action_->cancel("Takeoff canceled");
     endTakeoff("takeoff canceled");
   }
-  if (action_lifecycle_->returnHome().cancelRequested()) {
-    action_lifecycle_->returnHome().cancel("Return home canceled; holding");
+  if (return_home_action_->cancelRequested()) {
+    return_home_action_->cancel("Return home canceled; holding");
     latchHoverTarget();
     transitionTo(DroneState::kHold, "return home canceled");
   }

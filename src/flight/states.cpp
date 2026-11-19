@@ -2,7 +2,6 @@
 
 #include <cmath>
 
-#include "flight/detail/action_lifecycle_coordinator.hpp"
 #include "flight/detail/helpers.hpp"
 
 namespace mullet_core
@@ -118,7 +117,7 @@ void DroneStateMachine::handleTakingOff(const rclcpp::Time & t)
       latchHoverTargetPreservingTakeoffYaw();
     }
     publishTakeoffFeedback(1.0F);
-    action_lifecycle_->takeoff().succeed("Takeoff complete");
+    takeoff_action_->succeed("Takeoff complete");
     transitionTo(DroneState::kHold, "takeoff target reached");
   }
 }
@@ -136,14 +135,14 @@ void DroneStateMachine::handleLanding(const rclcpp::Time & t)
     last_vehicle_command_time_ = t;
   }
   if (px4_->isDisarmed()) {
-    action_lifecycle_->land().succeed("Vehicle disarmed after landing");
+    land_action_->succeed("Vehicle disarmed after landing");
     transitionTo(DroneState::kIdle, "vehicle disarmed");
     return;
   }
   if (!landing_timeout_reported_ && (t - landing_start_time_).seconds() >= config_.landing_timeout_s) {
     constexpr const char * kMessage = "Landing timed out while vehicle is still armed";
     RCLCPP_ERROR(get_logger(), "%s", kMessage);
-    action_lifecycle_->land().abort(kMessage);
+    land_action_->abort(kMessage);
     landing_timeout_reported_ = true;
   }
 }
@@ -155,7 +154,7 @@ void DroneStateMachine::handleReturnHome()
   publishReturnHomeFeedback(distance_m);
   if (distance_m <= config_.return_home_acceptance_m) {
     latchHoverTarget();
-    action_lifecycle_->returnHome().succeed("Arrived home");
+    return_home_action_->succeed("Arrived home");
     transitionTo(DroneState::kHold, "arrived home");
     return;
   }
