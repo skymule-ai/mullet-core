@@ -1,13 +1,15 @@
 #pragma once
 
+#include <optional>
+
 #include <rclcpp/time.hpp>
 
 namespace mullet_core::state_machine_detail
 {
 
-// Returns whether a retriable PX4 command is due: no previous attempt (`last` is zero), or at
+// Returns whether a retriable PX4 command is due: no previous attempt, or at
 // least `interval_s` has elapsed since it.
-bool retryDue(const rclcpp::Time & now, const rclcpp::Time & last, double interval_s);
+bool retryDue(const rclcpp::Time & now, const std::optional<rclcpp::Time> & last, double interval_s);
 
 // Returns whether `value` is finite and within [min_value, max_value].
 bool finiteInRange(double value, double min_value, double max_value);

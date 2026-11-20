@@ -55,36 +55,10 @@ DroneStateMachine::DroneStateMachine(const rclcpp::NodeOptions & options)
   offboard_heartbeat_ = std::make_unique<OffboardHeartbeatPublisher>(
     *this, fmu_prefix, config_.control_rate_hz, [this]() {return buildOffboardSetpoint();});
 
-  initializeSubscriptions();
-  initializeActionServers();
-  const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
-    std::chrono::duration<double>(1.0 / std::max(config_.control_rate_hz, 1.0)));
-  state_enter_time_ = now();
-  control_timer_ = create_wall_timer(period, [this]() {controlTick();});
-  paddock_heartbeat_ = std::make_unique<PaddockHeartbeatPublisher>(
-    *this, config_.heartbeat_topic, config_.heartbeat_rate_hz,
-    [this]() {return buildHeartbeatMessage();});
-  localization_status_ = std::make_unique<LocalizationStatusPublisher>(*this, fmu_prefix, config_.drone_id);
-
-  RCLCPP_INFO(
-    get_logger(),
-    "mullet_core started: drone_id='%s' instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz heartbeat=%.1f Hz",
-    config_.drone_id.c_str(), config_.vehicle_instance, fmu_prefix.c_str(),
-    static_cast<unsigned int>(target_system), config_.control_rate_hz,
-    config_.heartbeat_rate_hz);
-}
-
-DroneStateMachine::~DroneStateMachine() = default;
-
-void DroneStateMachine::initializeSubscriptions()
-{
   command_sub_ = create_subscription<MissionCommand>(
     config_.command_topic, commandQoS(),
     [this](const MissionCommand::SharedPtr msg) {onCommand(msg);});
-}
 
-void DroneStateMachine::initializeActionServers()
-{
   takeoff_action_ = std::make_unique<state_machine_detail::ActionServer<Takeoff>>(
     *this, "takeoff",
     [this](const Takeoff::Goal & goal) {return takeoffGoalRejectReason(goal);},
@@ -113,7 +87,24 @@ void DroneStateMachine::initializeActionServers()
     [this](const std::shared_ptr<Trigger::Request>, std::shared_ptr<Trigger::Response> response) {
       onHold(*response);
     });
+
+  const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::duration<double>(1.0 / std::max(config_.control_rate_hz, 1.0)));
+  control_timer_ = create_wall_timer(period, [this]() {controlTick();});
+  paddock_heartbeat_ = std::make_unique<PaddockHeartbeatPublisher>(
+    *this, config_.heartbeat_topic, config_.heartbeat_rate_hz,
+    [this]() {return buildHeartbeatMessage();});
+  localization_status_ = std::make_unique<LocalizationStatusPublisher>(*this, fmu_prefix, config_.drone_id);
+
+  RCLCPP_INFO(
+    get_logger(),
+    "mullet_core started: drone_id='%s' instance=%d fmu_prefix='%s' target_system=%u control_rate=%.1f Hz heartbeat=%.1f Hz",
+    config_.drone_id.c_str(), config_.vehicle_instance, fmu_prefix.c_str(),
+    static_cast<unsigned int>(target_system), config_.control_rate_hz,
+    config_.heartbeat_rate_hz);
 }
+
+DroneStateMachine::~DroneStateMachine() = default;
 
 // Assembles the full `/mullet/heartbeat` message from current PX4 telemetry, FSM state, and
 // action activity. Called once per heartbeat tick by PaddockHeartbeatPublisher; this is the sole
@@ -141,11 +132,11 @@ mullet_interfaces::msg::DroneHeartbeat DroneStateMachine::buildHeartbeatMessage(
   msg.start_mission_service_path = joinRosPath(ros_namespace, "start_mission");
   msg.hold_service_path = joinRosPath(ros_namespace, "hold");
 
-  msg.state = static_cast<std::uint16_t>(state_);
-  msg.state_label = stateName(state_);
+  msg.state = static_cast<std::uint16_t>(wireState(state_));
+  msg.state_label = stateName(wireState(state_));
   msg.previous_state = static_cast<std::uint16_t>(previous_state_);
   msg.previous_state_label = stateName(previous_state_);
-  msg.active_action = activeActionName();
+  msg.active_action = activeActionName(state_);
 
   msg.has_vehicle_status = has_vehicle_status;
   msg.has_local_position = px4_->hasLocalPosition();
@@ -203,32 +194,33 @@ void DroneStateMachine::controlTick()
   tick_stats_.update(tick_time, config_.control_rate_hz);
   handleExternalOverride();
   handleActionCancellations();
-  dispatchState(current_time);
-  tick_stats_.maybeLog(get_logger(), tick_time, config_.timing_log_period_s, stateName(state_));
+  auto tr = std::visit([&](auto & s) { return tick(s, current_time); }, state_);
+  if (tr) {
+    transitionTo(tr->next, tr->reason);
+  }
+  tick_stats_.maybeLog(get_logger(), tick_time, config_.timing_log_period_s, stateName(wireState(state_)));
 }
 
 void DroneStateMachine::handleExternalOverride()
 {
-  const bool airborne_under_offboard = state_ == DroneState::kHold ||
-    state_ == DroneState::kMission ||
-    (state_ == DroneState::kTransition &&
-    (phase_ == Phase::kAscent || phase_ == Phase::kReturnHome));
+  const auto * takeoff = std::get_if<TakingOff>(&state_);
+  const bool airborne_under_offboard = std::holds_alternative<Hold>(state_) ||
+    std::holds_alternative<Mission>(state_) ||
+    std::holds_alternative<ReturningHome>(state_) ||
+    (takeoff && takeoff->step == TakingOff::Step::kAscent);
   if (!airborne_under_offboard) {
     return;
   }
   if (px4_->isDisarmed()) {
     takeoff_action_->abort("Takeoff aborted: vehicle disarmed externally");
     return_home_action_->abort("Return home aborted: vehicle disarmed externally");
-    transitionTo(DroneState::kIdle, "PX4 disarmed externally");
+    transitionTo(Idle{}, "PX4 disarmed externally");
     return;
   }
   if (!px4_->isOffboard()) {
-    // Keep the hold target on the vehicle while the pilot flies, so re-entering offboard holds
-    // in place instead of flying back to a stale setpoint.
-    latchHoverTarget();
     takeoff_action_->abort("Takeoff aborted: PX4 left offboard");
     return_home_action_->abort("Return home aborted: PX4 left offboard");
-    transitionTo(DroneState::kHold, "PX4 left offboard; pilot has control");
+    transitionTo(Hold{.target = currentPose(flownPose(state_))}, "PX4 left offboard; pilot has control");
   }
 }
 
@@ -236,27 +228,15 @@ void DroneStateMachine::handleActionCancellations()
 {
   if (takeoff_action_->cancelRequested()) {
     takeoff_action_->cancel("Takeoff canceled");
-    endTakeoff("takeoff canceled");
+    // A takeoff goal is only active while TakingOff, so the get_if always succeeds here.
+    if (const auto * takeoff = std::get_if<TakingOff>(&state_)) {
+      auto transition = endTakeoff(*takeoff, "takeoff canceled");
+      transitionTo(std::move(transition.next), transition.reason);
+    }
   }
   if (return_home_action_->cancelRequested()) {
     return_home_action_->cancel("Return home canceled; holding");
-    latchHoverTarget();
-    transitionTo(DroneState::kHold, "return home canceled");
-  }
-}
-
-void DroneStateMachine::dispatchState(const rclcpp::Time & current_time)
-{
-  switch (state_) {
-    case DroneState::kIdle:
-    case DroneState::kHold:
-      break;
-    case DroneState::kTransition:
-      handleTransition(current_time);
-      break;
-    case DroneState::kMission:
-      handleMission(current_time);
-      break;
+    transitionTo(Hold{.target = currentPose(flownPose(state_))}, "return home canceled");
   }
 }
 

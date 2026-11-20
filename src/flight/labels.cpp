@@ -3,7 +3,7 @@
 namespace mullet_core
 {
 
-const char * DroneStateMachine::stateName(DroneState state)
+const char * stateName(DroneState state)
 {
   switch (state) {
     case DroneState::kIdle: return "IDLE";
@@ -14,36 +14,18 @@ const char * DroneStateMachine::stateName(DroneState state)
   return "UNKNOWN";
 }
 
-const char * DroneStateMachine::phaseName(Phase phase)
+const char * stepName(TakingOff::Step step)
 {
-  switch (phase) {
-    case Phase::kWarmup: return "warmup";
-    case Phase::kRequestOffboard: return "request_offboard";
-    case Phase::kRequestArm: return "request_arm";
-    case Phase::kAscent: return "ascent";
-    case Phase::kLanding: return "landing";
-    case Phase::kReturnHome: return "return_home";
+  switch (step) {
+    case TakingOff::Step::kWarmup: return "warmup";
+    case TakingOff::Step::kRequestOffboard: return "request_offboard";
+    case TakingOff::Step::kRequestArm: return "request_arm";
+    case TakingOff::Step::kAscent: return "ascent";
   }
   return "unknown";
 }
 
-const char * DroneStateMachine::activeActionName() const
-{
-  if (state_ != DroneState::kTransition) {
-    return "";
-  }
-  switch (phase_) {
-    case Phase::kLanding: return "land";
-    case Phase::kReturnHome: return "return_home";
-    case Phase::kWarmup:
-    case Phase::kRequestOffboard:
-    case Phase::kRequestArm:
-    case Phase::kAscent: return "takeoff";
-  }
-  return "";
-}
-
-const char * DroneStateMachine::navStateName(std::uint8_t nav_state)
+const char * navStateName(std::uint8_t nav_state)
 {
   using VehicleStatus = px4_msgs::msg::VehicleStatus;
 
@@ -69,7 +51,7 @@ const char * DroneStateMachine::navStateName(std::uint8_t nav_state)
   return "UNKNOWN";
 }
 
-const char * DroneStateMachine::armingStateName(std::uint8_t arming_state)
+const char * armingStateName(std::uint8_t arming_state)
 {
   using VehicleStatus = px4_msgs::msg::VehicleStatus;
 

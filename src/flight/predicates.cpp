@@ -3,23 +3,12 @@
 namespace mullet_core
 {
 
-bool DroneStateMachine::takingOff() const
-{
-  return state_ == DroneState::kTransition && phase_ != Phase::kLanding &&
-         phase_ != Phase::kReturnHome;
-}
-
-bool DroneStateMachine::shouldRecoverThroughLanding() const
-{
-  return px4_->isArmed() || takeoff_arm_requested_;
-}
-
 // Reasons a Takeoff goal would be rejected right now, or nullptr if eligible. Single source of
 // truth shared by canTakeoff() (the heartbeat's can_takeoff flag) and takeoffGoalRejectReason(),
 // which adds the goal-parameter checks (altitude range, yaw) since those need the goal.
 const char * DroneStateMachine::takeoffRejectReason() const
 {
-  if (state_ != DroneState::kIdle) {
+  if (!std::holds_alternative<Idle>(state_)) {
     return "state is not IDLE";
   }
   if (!px4_->hasVehicleStatus() || !px4_->localPositionValid()) {
@@ -43,10 +32,10 @@ const char * DroneStateMachine::landRejectReason() const
   if (!px4_->hasVehicleStatus()) {
     return "PX4 telemetry is not ready";
   }
-  if (state_ == DroneState::kTransition && phase_ == Phase::kLanding) {
+  if (std::holds_alternative<Landing>(state_)) {
     return "already landing";
   }
-  if (!px4_->isArmed() && !takingOff()) {
+  if (!px4_->isArmed() && !std::holds_alternative<TakingOff>(state_)) {
     return "vehicle is not armed";
   }
   return nullptr;
@@ -59,10 +48,10 @@ bool DroneStateMachine::canLand() const
 
 const char * DroneStateMachine::returnHomeRejectReason() const
 {
-  if (state_ != DroneState::kHold && state_ != DroneState::kMission) {
+  if (!std::holds_alternative<Hold>(state_) && !std::holds_alternative<Mission>(state_)) {
     return "state is not HOLD or MISSION";
   }
-  if (!home_valid_) {
+  if (!home_) {
     return "no home latched: this node has not taken off";
   }
   if (!px4_->isOffboard()) {
@@ -81,7 +70,7 @@ bool DroneStateMachine::canReturnHome() const
 
 const char * DroneStateMachine::startMissionRejectReason() const
 {
-  if (state_ != DroneState::kHold) {
+  if (!std::holds_alternative<Hold>(state_)) {
     return "state is not HOLD";
   }
   if (!px4_->isOffboard()) {
@@ -97,9 +86,7 @@ bool DroneStateMachine::canStartMission() const
 
 const char * DroneStateMachine::holdRejectReason() const
 {
-  if (state_ == DroneState::kMission ||
-    (state_ == DroneState::kTransition && phase_ == Phase::kReturnHome))
-  {
+  if (std::holds_alternative<Mission>(state_) || std::holds_alternative<ReturningHome>(state_)) {
     return nullptr;
   }
   return "nothing to stop: not in MISSION or return home";

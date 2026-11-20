@@ -10,9 +10,9 @@ namespace
 constexpr double kPi = 3.14159265358979323846;
 }  // namespace
 
-bool retryDue(const rclcpp::Time & now, const rclcpp::Time & last, double interval_s)
+bool retryDue(const rclcpp::Time & now, const std::optional<rclcpp::Time> & last, double interval_s)
 {
-  return last.nanoseconds() == 0 || (now - last).seconds() >= interval_s;
+  return !last || (now - *last).seconds() >= interval_s;
 }
 
 bool finiteInRange(double value, double min_value, double max_value)
