@@ -14,12 +14,12 @@ namespace
 using Setpoint = OffboardHeartbeatPublisher::Setpoint;
 constexpr auto kUnset = OffboardHeartbeatPublisher::kUnset;
 
-Setpoint positionSetpoint(float x, float y, float z, float yaw_rad)
+Setpoint positionSetpoint(const Pose & pose)
 {
   Setpoint setpoint{};
   setpoint.active = true;
-  setpoint.position = {x, y, z};
-  setpoint.yaw_rad = yaw_rad;
+  setpoint.position = {pose.x, pose.y, pose.z};
+  setpoint.yaw_rad = pose.yaw;
   return setpoint;
 }
 
@@ -27,44 +27,12 @@ float clampAbs(float value, double limit)
 {
   return static_cast<float>(std::clamp(static_cast<double>(value), -limit, limit));
 }
-}  // namespace
 
-bool DroneStateMachine::takeoffSettled(const rclcpp::Time & current_time)
+// Returns whether takeoff yaw has converged; always true when using current-heading takeoff.
+bool takeoffYawSettled(
+  const TakingOff & s, float current_heading, double tolerance_rad, float * yaw_error_rad)
 {
-  if (!px4_->hasLocalPosition()) {
-    hover_settle_start_time_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
-    return false;
-  }
-  const auto & position = px4_->localPosition();
-  const auto z_error = position.z_valid ? std::fabs(position.z - takeoff_z_ned_m_) :
-    std::numeric_limits<float>::infinity();
-  const auto vz = position.v_z_valid ? std::fabs(position.vz) :
-    std::numeric_limits<float>::infinity();
-  float yaw_error = std::numeric_limits<float>::infinity();
-  const bool yaw_settled = takeoffYawSettled(position.heading, &yaw_error);
-  if (!yaw_settled && !active_takeoff_uses_current_yaw_) {
-    RCLCPP_DEBUG(
-      get_logger(),
-      "Waiting for takeoff yaw alignment: error=%.3f rad tolerance=%.3f rad",
-      yaw_error, config_.takeoff_yaw_tolerance_rad);
-  }
-  const auto altitude_tolerance_m = std::min(
-    config_.hover_altitude_tolerance_m, config_.takeoff_acceptance_m);
-  const bool settled = z_error <= altitude_tolerance_m &&
-    vz <= config_.hover_vertical_velocity_tolerance_mps && yaw_settled;
-  if (!settled) {
-    hover_settle_start_time_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
-    return false;
-  }
-  if (hover_settle_start_time_.nanoseconds() == 0) {
-    hover_settle_start_time_ = current_time;
-  }
-  return (current_time - hover_settle_start_time_).seconds() >= config_.hover_settle_time_s;
-}
-
-bool DroneStateMachine::takeoffYawSettled(float current_heading, float * yaw_error_rad) const
-{
-  if (active_takeoff_uses_current_yaw_) {
+  if (s.use_current_yaw) {
     if (yaw_error_rad != nullptr) {
       *yaw_error_rad = 0.0F;
     }
@@ -77,115 +45,124 @@ bool DroneStateMachine::takeoffYawSettled(float current_heading, float * yaw_err
     return false;
   }
 
-  const auto yaw_error = state_machine_detail::wrapPi(
-    active_takeoff_target_yaw_rad_ - current_heading);
+  const auto yaw_error = state_machine_detail::wrapPi(s.target.yaw - current_heading);
   if (yaw_error_rad != nullptr) {
     *yaw_error_rad = yaw_error;
   }
-  return std::fabs(yaw_error) <= config_.takeoff_yaw_tolerance_rad;
+  return std::fabs(yaw_error) <= tolerance_rad;
+}
+}  // namespace
+
+bool DroneStateMachine::takeoffSettled(TakingOff & s, const rclcpp::Time & current_time)
+{
+  if (!px4_->hasLocalPosition()) {
+    s.settle_start.reset();
+    return false;
+  }
+  const auto & position = px4_->localPosition();
+  const auto z_error = position.z_valid ? std::fabs(position.z - s.target.z) :
+    std::numeric_limits<float>::infinity();
+  const auto vz = position.v_z_valid ? std::fabs(position.vz) :
+    std::numeric_limits<float>::infinity();
+  float yaw_error = std::numeric_limits<float>::infinity();
+  const bool yaw_settled = takeoffYawSettled(s, position.heading, config_.takeoff_yaw_tolerance_rad, &yaw_error);
+  if (!yaw_settled && !s.use_current_yaw) {
+    RCLCPP_DEBUG(
+      get_logger(),
+      "Waiting for takeoff yaw alignment: error=%.3f rad tolerance=%.3f rad",
+      yaw_error, config_.takeoff_yaw_tolerance_rad);
+  }
+  const auto altitude_tolerance_m = std::min(
+    config_.hover_altitude_tolerance_m, config_.takeoff_acceptance_m);
+  const bool settled = z_error <= altitude_tolerance_m &&
+    vz <= config_.hover_vertical_velocity_tolerance_mps && yaw_settled;
+  if (!settled) {
+    s.settle_start.reset();
+    return false;
+  }
+  if (!s.settle_start.has_value()) {
+    s.settle_start = current_time;
+  }
+  return (current_time - *s.settle_start).seconds() >= config_.hover_settle_time_s;
 }
 
-bool DroneStateMachine::latchTakeoffTarget()
+std::optional<TakingOff> DroneStateMachine::makeTakeoff(const Takeoff::Goal & goal) const
 {
   if (!px4_->hasLocalPosition()) {
     RCLCPP_ERROR(get_logger(), "Cannot latch takeoff target: local position is unavailable");
-    return false;
+    return std::nullopt;
   }
-
   const auto & position = px4_->localPosition();
   if (!position.xy_valid || !position.z_valid) {
     RCLCPP_ERROR(
       get_logger(), "Cannot latch takeoff target: invalid local position flags xy_valid=%s z_valid=%s",
       position.xy_valid ? "true" : "false", position.z_valid ? "true" : "false");
-    return false;
+    return std::nullopt;
   }
-
-  takeoff_x_ned_m_ = position.x;
-  takeoff_y_ned_m_ = position.y;
-  takeoff_origin_z_ned_m_ = position.z;
-  takeoff_z_ned_m_ = position.z;
-  hover_x_ned_m_ = takeoff_x_ned_m_;
-  hover_y_ned_m_ = takeoff_y_ned_m_;
-  hover_z_ned_m_ = takeoff_z_ned_m_;
-  hover_yaw_rad_ = std::isfinite(position.heading) ? position.heading :
-    static_cast<float>(config_.hover_yaw_rad);
-  return true;
-}
-
-bool DroneStateMachine::configureTakeoffTarget(const Takeoff::Goal & goal)
-{
-  if (!latchTakeoffTarget()) {
-    return false;
-  }
-  takeoff_z_ned_m_ = takeoff_origin_z_ned_m_ - goal.altitude_m;
-  hover_z_ned_m_ = takeoff_z_ned_m_;
-  active_takeoff_uses_current_yaw_ = goal.use_current_yaw;
-  if (!goal.use_current_yaw) {
-    active_takeoff_target_yaw_rad_ = state_machine_detail::wrapPi(goal.yaw_rad);
-    hover_yaw_rad_ = active_takeoff_target_yaw_rad_;
-  } else if (!std::isfinite(px4_->localPosition().heading)) {
+  if (goal.use_current_yaw && !std::isfinite(position.heading)) {
     RCLCPP_ERROR(get_logger(), "Cannot latch takeoff target: current heading is not finite");
-    return false;
-  } else {
-    active_takeoff_target_yaw_rad_ = state_machine_detail::wrapPi(px4_->localPosition().heading);
+    return std::nullopt;
   }
+  // Built whole and returned only on success, so a failure can no longer leave a half-written
+  // target behind.
+  TakingOff takeoff{
+    .step = TakingOff::Step::kWarmup,
+    .step_enter = now(),
+    .target = {
+      .x = position.x,
+      .y = position.y,
+      .z = position.z - goal.altitude_m,
+      .yaw = goal.use_current_yaw ? position.heading : state_machine_detail::wrapPi(goal.yaw_rad),
+    },
+    .origin_z = position.z,
+    .use_current_yaw = goal.use_current_yaw,
+  };
   RCLCPP_INFO(
     get_logger(), "Takeoff target latched: x=%.2f y=%.2f z=%.2f yaw=%.2f",
-    takeoff_x_ned_m_, takeoff_y_ned_m_, takeoff_z_ned_m_, hover_yaw_rad_);
-  return true;
+    takeoff.target.x, takeoff.target.y, takeoff.target.z, takeoff.target.yaw);
+  return takeoff;
 }
 
-void DroneStateMachine::latchHoverTarget()
+Pose DroneStateMachine::currentPose(Pose fallback) const
 {
   const auto & position = px4_->localPosition();
   if (position.xy_valid) {
-    hover_x_ned_m_ = position.x;
-    hover_y_ned_m_ = position.y;
+    fallback.x = position.x;
+    fallback.y = position.y;
   }
   if (position.z_valid) {
-    hover_z_ned_m_ = position.z;
+    fallback.z = position.z;
   }
   if (std::isfinite(position.heading)) {
-    hover_yaw_rad_ = position.heading;
+    fallback.yaw = position.heading;
   }
-}
-
-void DroneStateMachine::latchHoverTargetPreservingTakeoffYaw()
-{
-  latchHoverTarget();
-  hover_yaw_rad_ = active_takeoff_target_yaw_rad_;
+  return fallback;
 }
 
 OffboardHeartbeatPublisher::Setpoint DroneStateMachine::buildOffboardSetpoint() const
 {
-  const auto hold = positionSetpoint(hover_x_ned_m_, hover_y_ned_m_, hover_z_ned_m_, hover_yaw_rad_);
-  switch (state_) {
-    case DroneState::kIdle:
-      return {};
-    case DroneState::kHold:
-      return hold;
-    case DroneState::kMission:
+  return std::visit(overloaded{
+    [](const Idle &) {return Setpoint{};},
+    [](const TakingOff & s) {return positionSetpoint(s.target);},
+    // PX4 lands in AUTO_LAND; offboard setpoints would be ignored anyway.
+    [](const Landing &) {return Setpoint{};},
+    [](const ReturningHome & s) {return positionSetpoint(s.carrot);},
+    [](const Hold & s) {return positionSetpoint(s.target);},
+    [this](const Mission & s) {
       return commandFresh(latest_command_, now(), config_.command_timeout_s) ?
-             missionSetpoint() : hold;
-    case DroneState::kTransition:
-      if (phase_ == Phase::kLanding) {
-        return {};  // PX4 lands in AUTO_LAND; offboard setpoints would be ignored anyway.
-      }
-      if (phase_ == Phase::kReturnHome) {
-        return hold;
-      }
-      return positionSetpoint(takeoff_x_ned_m_, takeoff_y_ned_m_, takeoff_z_ned_m_, hover_yaw_rad_);
-  }
-  return {};
+             missionSetpoint(s) : positionSetpoint(s.hold);
+    },
+  }, state_);
 }
 
-OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
+OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint(
+  const Mission & mission) const
 {
   const auto & command = *latest_command_;
   Setpoint setpoint{};
   setpoint.active = true;
   // Planar modes hold the altitude latched on entering MISSION; 3D modes leave z to the command.
-  setpoint.position = {kUnset, kUnset, is3d(command.mode) ? kUnset : hover_z_ned_m_};
+  setpoint.position = {kUnset, kUnset, is3d(command.mode) ? kUnset : mission.hold.z};
   if (isTrajectory(command.mode)) {
     // PX4 flies at its own speed limits toward a far position setpoint, so the command may only
     // lead the drone by a bounded distance, measured from where the drone is.
@@ -227,7 +204,7 @@ OffboardHeartbeatPublisher::Setpoint DroneStateMachine::missionSetpoint() const
   } else if (carriesVelocity(command.mode) && std::hypot(vx, vy) > 1e-3F) {
     setpoint.yaw_rad = std::atan2(vy, vx);
   } else {
-    setpoint.yaw_rad = hover_yaw_rad_;
+    setpoint.yaw_rad = mission.hold.yaw;
   }
   return setpoint;
 }

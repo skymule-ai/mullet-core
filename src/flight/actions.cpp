@@ -9,6 +9,15 @@
 namespace mullet_core
 {
 
+namespace
+{
+// A takeoff must end through landing rather than a plain reset to IDLE once PX4 may be armed.
+bool shouldRecoverThroughLanding(const TakingOff & takeoff, bool px4_armed)
+{
+  return px4_armed || takeoff.arm_requested;
+}
+}  // namespace
+
 const char * DroneStateMachine::takeoffGoalRejectReason(const Takeoff::Goal & goal) const
 {
   if (const char * reason = takeoffRejectReason()) {
@@ -30,47 +39,50 @@ const char * DroneStateMachine::takeoffGoalRejectReason(const Takeoff::Goal & go
 
 void DroneStateMachine::onTakeoffAccepted(const Takeoff::Goal & goal)
 {
-  takeoff_arm_requested_ = false;
-  active_takeoff_uses_current_yaw_ = true;
-  active_takeoff_target_yaw_rad_ = 0.0F;
-  hover_settle_start_time_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
-  if (!configureTakeoffTarget(goal)) {
+  auto takeoff = makeTakeoff(goal);
+  if (!takeoff) {
     takeoff_action_->abort("Failed to configure takeoff target");
     return;
   }
-  home_valid_ = true;
-  enterPhase(Phase::kWarmup, "takeoff action accepted");
+  home_ = std::array<float, 2>{takeoff->target.x, takeoff->target.y};
+  transitionTo(std::move(*takeoff), "takeoff action accepted");
 }
 
 void DroneStateMachine::onLandAccepted(const Land::Goal &)
 {
   return_home_action_->abort("Return home preempted by land action");
-  if (takingOff()) {
+  if (const auto * takeoff = std::get_if<TakingOff>(&state_)) {
     takeoff_action_->abort("Takeoff preempted by land action");
-    if (!shouldRecoverThroughLanding()) {
+    if (!shouldRecoverThroughLanding(*takeoff, px4_->isArmed())) {
       land_action_->succeed("Takeoff canceled before arming; vehicle already disarmed");
-      transitionTo(DroneState::kIdle, "land action before arming");
+      transitionTo(Idle{}, "land action before arming");
       return;
     }
   }
-  startLanding("land action accepted");
+  transitionTo(Landing{.start = now()}, "land action accepted");
 }
 
 void DroneStateMachine::onReturnHomeAccepted(const ReturnHome::Goal &)
 {
-  latchHoverTarget();  // The carrot starts at the vehicle, not at an older hold point.
-  enterPhase(Phase::kReturnHome, "return_home action accepted");
+  // The carrot starts at the vehicle, not at an older hold point.
+  transitionTo(
+    ReturningHome{.carrot = currentPose(flownPose(state_))}, "return_home action accepted");
 }
 
 void DroneStateMachine::onStartMission(Trigger::Response & response)
 {
   if (const char * reason = startMissionRejectReason()) {
-    RCLCPP_WARN(get_logger(), "Rejecting start_mission: %s (state=%s)", reason, stateName(state_));
+    RCLCPP_WARN(
+      get_logger(), "Rejecting start_mission: %s (state=%s)", reason,
+      stateName(wireState(state_)));
     response.success = false;
     response.message = reason;
     return;
   }
-  transitionTo(DroneState::kMission, "start_mission requested");
+  // startMissionRejectReason() guarantees Hold; the mission starts from its hold pose, so a
+  // planar mission keeps Hold's altitude.
+  transitionTo(
+    Mission{.hold = std::get<Hold>(state_).target, .enter = now()}, "start_mission requested");
   response.success = true;
   response.message = "Mission started";
 }
@@ -78,28 +90,28 @@ void DroneStateMachine::onStartMission(Trigger::Response & response)
 void DroneStateMachine::onHold(Trigger::Response & response)
 {
   if (const char * reason = holdRejectReason()) {
-    RCLCPP_WARN(get_logger(), "Rejecting hold: %s (state=%s)", reason, stateName(state_));
+    RCLCPP_WARN(
+      get_logger(), "Rejecting hold: %s (state=%s)", reason, stateName(wireState(state_)));
     response.success = false;
     response.message = reason;
     return;
   }
   return_home_action_->abort("Return home stopped by hold");
-  latchHoverTarget();
-  transitionTo(DroneState::kHold, "hold requested");
+  transitionTo(Hold{.target = currentPose(flownPose(state_))}, "hold requested");
   response.success = true;
   response.message = "Holding position";
 }
 
-void DroneStateMachine::publishTakeoffFeedback(float progress)
+void DroneStateMachine::publishTakeoffFeedback(const TakingOff & s, float progress)
 {
   if (!takeoff_action_->active()) {
     return;
   }
   auto feedback = std::make_shared<Takeoff::Feedback>();
-  feedback->state = stateName(state_);
-  feedback->target_altitude_m = takeoff_origin_z_ned_m_ - takeoff_z_ned_m_;
+  feedback->state = stateName(wireState(state_));
+  feedback->target_altitude_m = s.origin_z - s.target.z;
   if (px4_->hasLocalPosition() && px4_->localPosition().z_valid) {
-    feedback->current_altitude_m = takeoff_origin_z_ned_m_ - px4_->localPosition().z;
+    feedback->current_altitude_m = s.origin_z - px4_->localPosition().z;
     feedback->altitude_error_m = std::fabs(
       feedback->target_altitude_m - feedback->current_altitude_m);
   } else {
@@ -110,17 +122,17 @@ void DroneStateMachine::publishTakeoffFeedback(float progress)
   takeoff_action_->publish(feedback);
 }
 
-void DroneStateMachine::publishLandFeedback(const rclcpp::Time & current_time)
+void DroneStateMachine::publishLandFeedback(const Landing & s, const rclcpp::Time & current_time)
 {
   if (!land_action_->active()) {
     return;
   }
 
   auto feedback = std::make_shared<Land::Feedback>();
-  feedback->state = px4_->isArmed() ? "WAITING_FOR_DISARM" : stateName(state_);
+  feedback->state = px4_->isArmed() ? "WAITING_FOR_DISARM" : stateName(wireState(state_));
   feedback->armed = px4_->isArmed();
   feedback->elapsed_s = static_cast<float>(
-    std::max(0.0, (current_time - landing_start_time_).seconds()));
+    std::max(0.0, (current_time - s.start).seconds()));
   land_action_->publish(feedback);
 }
 
@@ -135,32 +147,20 @@ void DroneStateMachine::publishReturnHomeFeedback(float distance_m)
   return_home_action_->publish(feedback);
 }
 
-void DroneStateMachine::startLanding(const char * reason)
-{
-  position_mode_requested_for_landing_ = true;
-  landing_start_time_ = now();
-  landing_timeout_reported_ = false;
-  enterPhase(Phase::kLanding, reason);
-}
-
-void DroneStateMachine::failTakeoff(const char * reason)
+DroneStateMachine::Transition DroneStateMachine::failTakeoff(
+  const TakingOff & takeoff, const char * reason)
 {
   takeoff_action_->abort(reason);
-  endTakeoff(reason);
+  return endTakeoff(takeoff, reason);
 }
 
-void DroneStateMachine::endTakeoff(const char * reason)
+DroneStateMachine::Transition DroneStateMachine::endTakeoff(
+  const TakingOff & takeoff, const char * reason)
 {
-  if (shouldRecoverThroughLanding()) {
-    startLanding(reason);
-  } else {
-    transitionTo(DroneState::kIdle, reason);
+  if (shouldRecoverThroughLanding(takeoff, px4_->isArmed())) {
+    return Transition{Landing{.start = now()}, reason};
   }
-}
-
-void DroneStateMachine::resetVehicleCommandRetryTimer()
-{
-  last_vehicle_command_time_.reset();
+  return Transition{Idle{}, reason};
 }
 
 }  // namespace mullet_core

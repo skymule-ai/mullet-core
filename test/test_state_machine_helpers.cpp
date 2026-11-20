@@ -1,10 +1,13 @@
 #include "flight/detail/helpers.hpp"
 
+#include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 #include <gtest/gtest.h>
 
+#include "mullet_core/flight/flight_states.hpp"
 #include "mullet_core/px4/topic_utils.hpp"
 
 namespace mullet_core::state_machine_detail
@@ -15,12 +18,9 @@ namespace
 constexpr float kPi = 3.14159265358979323846F;
 constexpr float kTolerance = 1e-6F;
 
-TEST(StateMachineHelpers, RetryDueAcceptsZeroLastTime)
+TEST(StateMachineHelpers, RetryDueWhenNeverSent)
 {
-  const rclcpp::Time now(10, 0, RCL_ROS_TIME);
-  const rclcpp::Time last(0, 0, RCL_ROS_TIME);
-
-  EXPECT_TRUE(retryDue(now, last, 1.0));
+  EXPECT_TRUE(retryDue(rclcpp::Time(10, 0, RCL_ROS_TIME), std::nullopt, 1.0));
 }
 
 TEST(StateMachineHelpers, RetryDueChecksIntervalBoundary)
@@ -88,6 +88,39 @@ TEST(StateMachineHelpers, LocalToGlobalMovesNorthEastAndUp)
   const auto east_60 = localToGlobal(60.0, 0.0, 0.0, 0.0, 1000.0, 0.0);
   EXPECT_NEAR(east_60.lon_deg, 2.0 * east_equator.lon_deg, 1e-9);
   EXPECT_NEAR(east_60.lat_deg, 60.0, 1e-12);
+}
+
+// rclcpp::Time's default constructor is explicit, so aggregates must name their Time fields.
+const rclcpp::Time kT0;
+
+TEST(FlightStates, WireStateAndActiveActionPerAlternative)
+{
+  EXPECT_EQ(wireState(Idle{}), DroneState::kIdle);
+  EXPECT_EQ(wireState(TakingOff{.step_enter = kT0}), DroneState::kTransition);
+  EXPECT_EQ(wireState(Landing{.start = kT0}), DroneState::kTransition);
+  EXPECT_EQ(wireState(ReturningHome{}), DroneState::kTransition);
+  EXPECT_EQ(wireState(Hold{}), DroneState::kHold);
+  EXPECT_EQ(wireState(Mission{.enter = kT0}), DroneState::kMission);
+
+  EXPECT_STREQ(activeActionName(Idle{}), "");
+  EXPECT_STREQ(activeActionName(TakingOff{.step_enter = kT0}), "takeoff");
+  EXPECT_STREQ(activeActionName(Landing{.start = kT0}), "land");
+  EXPECT_STREQ(activeActionName(ReturningHome{}), "return_home");
+  EXPECT_STREQ(activeActionName(Hold{}), "");
+  EXPECT_STREQ(activeActionName(Mission{.enter = kT0}), "");
+}
+
+TEST(FlightStates, FlownPoseIsTheStreamedTarget)
+{
+  const Pose p{.x = 1.0F, .y = 2.0F, .z = -3.0F, .yaw = 0.5F};
+  const auto fields = [](const Pose & q) { return std::array{q.x, q.y, q.z, q.yaw}; };
+
+  EXPECT_EQ(fields(flownPose(TakingOff{.step_enter = kT0, .target = p})), fields(p));
+  EXPECT_EQ(fields(flownPose(ReturningHome{.carrot = p})), fields(p));
+  EXPECT_EQ(fields(flownPose(Hold{.target = p})), fields(p));
+  EXPECT_EQ(fields(flownPose(Mission{.hold = p, .enter = kT0})), fields(p));
+  EXPECT_EQ(fields(flownPose(Idle{})), fields(Pose{}));
+  EXPECT_EQ(fields(flownPose(Landing{.start = kT0})), fields(Pose{}));
 }
 
 TEST(Px4Topic, VersionedMessagesGetTheVersionSuffix)

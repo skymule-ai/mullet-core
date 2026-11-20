@@ -27,4 +27,17 @@ const char * activeActionName(const FlightState & state)
   }, state);
 }
 
+// The position target the current state streams to PX4; fallback for currentPose().
+Pose flownPose(const FlightState & state)
+{
+  return std::visit(overloaded {
+    [](const Idle &) { return Pose{}; }, // No caller can run in this state
+    [](const TakingOff & s) { return s.target; },
+    [](const Landing &) { return Pose{}; }, // No caller can run in this state
+    [](const ReturningHome & s) { return s.carrot; },
+    [](const Hold & s) { return s.target; },
+    [](const Mission & s) { return s.hold; }
+  }, state);
+}
+
 }  // namespace mullet_core

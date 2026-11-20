@@ -42,6 +42,14 @@ struct Mission { Pose hold{}; rclcpp::Time enter; };
 using FlightState = std::variant<Idle, TakingOff, Landing, ReturningHome, Hold, Mission>;
 
 DroneState wireState(const FlightState &);         // the 4-value wire enum
+// The position target the current state streams to PX4; fallback for currentPose().
+Pose flownPose(const FlightState & state);
 const char * activeActionName(const FlightState &); // "takeoff" / "land" / "return_home" / ""
 
-}
+// Log and heartbeat labels (src/flight/labels.cpp); each returns "UNKNOWN" for an unknown value.
+const char * stateName(DroneState state);
+const char * stepName(TakingOff::Step step);
+const char * navStateName(std::uint8_t nav_state);
+const char * armingStateName(std::uint8_t arming_state);
+
+}  // namespace mullet_core

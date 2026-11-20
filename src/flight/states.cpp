@@ -17,185 +17,161 @@ constexpr float kTakeoffProgressRequestArm = 0.4F;
 constexpr float kTakeoffProgressAscent = 0.6F;
 }  // namespace
 
-void DroneStateMachine::transitionTo(DroneState next, const char * reason)
+void DroneStateMachine::transitionTo(FlightState next, const char * reason)
 {
-  if (state_ == next) {
-    return;
+  if (wireState(state_) != wireState(next)) {
+    RCLCPP_INFO(get_logger(), "State: %s -> %s (%s)", stateName(wireState(state_)), stateName(wireState(next)), reason);
+    previous_state_ = wireState(state_);
   }
-  RCLCPP_INFO(get_logger(), "State: %s -> %s (%s)", stateName(state_), stateName(next), reason);
-  previous_state_ = state_;
-  state_ = next;
-  state_enter_time_ = now();
-  phase_enter_time_ = state_enter_time_;
+  state_ = std::move(next);
 }
 
-void DroneStateMachine::enterPhase(Phase phase, const char * reason)
+std::optional<DroneStateMachine::Transition> DroneStateMachine::tick(TakingOff & s, const rclcpp::Time & t)
 {
-  transitionTo(DroneState::kTransition, reason);
-  phase_ = phase;
-  phase_enter_time_ = now();
-  resetVehicleCommandRetryTimer();
-  RCLCPP_INFO(get_logger(), "TRANSITION phase -> %s", phaseName(phase_));
-}
+  using Step = TakingOff::Step;
+  // A step change is not a state transition: the alternative is mutated in place, restarting
+  // the step timer and the PX4 command retry timer (so the next step's command fires now).
+  auto advanceStep = [&](Step next, const char * reason) {
+    s.step = next;
+    s.step_enter = t;
+    s.last_command.reset();
+    RCLCPP_INFO(get_logger(), "TRANSITION step -> %s (%s)", stepName(next), reason);
+  };
 
-void DroneStateMachine::handleTransition(const rclcpp::Time & t)
-{
-  switch (phase_) {
-    case Phase::kLanding:
-      handleLanding(t);
-      return;
-    case Phase::kReturnHome:
-      handleReturnHome();
-      return;
-    case Phase::kWarmup:
-    case Phase::kRequestOffboard:
-    case Phase::kRequestArm:
-    case Phase::kAscent:
-      handleTakingOff(t);
-      return;
-  }
-}
-
-bool DroneStateMachine::phaseTimedOut(const rclcpp::Time & current_time, double timeout_s) const
-{
-  return (current_time - phase_enter_time_).seconds() >= timeout_s;
-}
-
-void DroneStateMachine::handleTakingOff(const rclcpp::Time & t)
-{
-  const float progress = phase_ == Phase::kWarmup ? kTakeoffProgressWarmup :
-    phase_ == Phase::kRequestOffboard ? kTakeoffProgressRequestOffboard :
-    phase_ == Phase::kRequestArm ? kTakeoffProgressRequestArm : kTakeoffProgressAscent;
-  publishTakeoffFeedback(progress);
-  if (phase_ == Phase::kWarmup) {
-    if ((t - phase_enter_time_).seconds() < config_.offboard_warmup_s) {
-      return;
+  const float progress = s.step == Step::kWarmup ? kTakeoffProgressWarmup :
+    s.step == Step::kRequestOffboard ? kTakeoffProgressRequestOffboard :
+    s.step == Step::kRequestArm ? kTakeoffProgressRequestArm : kTakeoffProgressAscent;
+  publishTakeoffFeedback(s, progress);
+  if (s.step == Step::kWarmup) {
+    if ((t - s.step_enter).seconds() < config_.offboard_warmup_s) {
+      return std::nullopt;
     }
-    enterPhase(Phase::kRequestOffboard, "offboard warmup complete");
+    advanceStep(Step::kRequestOffboard, "offboard warmup complete");
   }
-  if (phase_ == Phase::kRequestOffboard) {
-    if (phaseTimedOut(t, config_.request_offboard_timeout_s)) {
-      failTakeoff("offboard request timed out");
-      return;
+  if (s.step == Step::kRequestOffboard) {
+    if ((t - s.step_enter).seconds() >= config_.request_offboard_timeout_s) {
+      return failTakeoff(s, "offboard request timed out");
     }
-    if (state_machine_detail::retryDue(t, last_vehicle_command_time_, config_.command_retry_interval_s)) {
+    if (state_machine_detail::retryDue(t, s.last_command, config_.command_retry_interval_s)) {
       px4_->setOffboardMode();
-      last_vehicle_command_time_ = t;
+      s.last_command = t;
     }
     if (!px4_->isOffboard()) {
-      return;
+      return std::nullopt;
     }
-    enterPhase(Phase::kRequestArm, "PX4 entered offboard");
+    advanceStep(Step::kRequestArm, "PX4 entered offboard mode");
   }
-  if (phase_ == Phase::kRequestArm) {
-    if (phaseTimedOut(t, config_.request_arm_timeout_s)) {
-      failTakeoff("arm request timed out");
-      return;
+  if (s.step == Step::kRequestArm) {
+    if ((t - s.step_enter).seconds() >= config_.request_arm_timeout_s) {
+      return failTakeoff(s, "arm request timed out");
     }
     if (!px4_->isOffboard()) {
-      failTakeoff("offboard mode lost before arming");
-      return;
+      return failTakeoff(s, "offboard mode lost before arming");
     }
-    if (state_machine_detail::retryDue(t, last_vehicle_command_time_, config_.command_retry_interval_s)) {
+    if (state_machine_detail::retryDue(t, s.last_command, config_.command_retry_interval_s)) {
       px4_->arm();
-      takeoff_arm_requested_ = true;
-      last_vehicle_command_time_ = t;
+      s.arm_requested = true;
+      s.last_command = t;
     }
     if (!px4_->isArmed()) {
-      return;
+      return std::nullopt;
     }
-    enterPhase(Phase::kAscent, "PX4 armed");
+    advanceStep(Step::kAscent, "PX4 armed");
   }
-  if (phaseTimedOut(t, config_.takeoff_timeout_s)) {
-    failTakeoff("takeoff timed out");
-    return;
+  if (s.step == Step::kAscent && (t - s.step_enter).seconds() >= config_.takeoff_timeout_s) {
+    return failTakeoff(s, "takeoff timed out");
   }
-  if (takeoffSettled(t)) {
-    if (active_takeoff_uses_current_yaw_) {
-      latchHoverTarget();
-    } else {
-      latchHoverTargetPreservingTakeoffYaw();
+  if (takeoffSettled(s, t)) {
+    auto pose = currentPose(s.target);
+    if (!s.use_current_yaw) {
+      pose.yaw = s.target.yaw;
     }
-    publishTakeoffFeedback(1.0F);
+    publishTakeoffFeedback(s, 1.0F);
     takeoff_action_->succeed("Takeoff complete");
-    transitionTo(DroneState::kHold, "takeoff target reached");
+    return Transition{Hold{.target = pose}, "takeoff target reached"};
   }
+  return std::nullopt;
 }
 
-void DroneStateMachine::handleLanding(const rclcpp::Time & t)
+std::optional<DroneStateMachine::Transition> DroneStateMachine::tick(
+  Landing & s, const rclcpp::Time & t)
 {
-  publishLandFeedback(t);
-  if (position_mode_requested_for_landing_) {
+  publishLandFeedback(s, t);
+  if (!s.position_mode_sent) {
+    // last_command stays empty, so NAV_LAND below still goes out in this same first tick.
     px4_->setPositionMode();
-    position_mode_requested_for_landing_ = false;
-    resetVehicleCommandRetryTimer();
+    s.position_mode_sent = true;
   }
-  if (state_machine_detail::retryDue(t, last_vehicle_command_time_, config_.command_retry_interval_s)) {
+  if (state_machine_detail::retryDue(t, s.last_command, config_.command_retry_interval_s)) {
     px4_->land();
-    last_vehicle_command_time_ = t;
+    s.last_command = t;
   }
   if (px4_->isDisarmed()) {
     land_action_->succeed("Vehicle disarmed after landing");
-    transitionTo(DroneState::kIdle, "vehicle disarmed");
-    return;
+    return Transition{Idle{}, "vehicle disarmed"};
   }
-  if (!landing_timeout_reported_ && (t - landing_start_time_).seconds() >= config_.landing_timeout_s) {
+  if (!s.timeout_reported && (t - s.start).seconds() >= config_.landing_timeout_s) {
     constexpr const char * kMessage = "Landing timed out while vehicle is still armed";
     RCLCPP_ERROR(get_logger(), "%s", kMessage);
     land_action_->abort(kMessage);
-    landing_timeout_reported_ = true;
+    s.timeout_reported = true;  // keep landing: only the goal gives up, not the vehicle
   }
+  return std::nullopt;
 }
 
-void DroneStateMachine::handleReturnHome()
+std::optional<DroneStateMachine::Transition> DroneStateMachine::tick(
+  ReturningHome & s, const rclcpp::Time &)
 {
+  // returnHomeRejectReason() only accepts with a home latched, and home_ is never cleared.
+  const auto [home_x, home_y] = *home_;
   const auto & position = px4_->localPosition();
-  const float distance_m = std::hypot(takeoff_x_ned_m_ - position.x, takeoff_y_ned_m_ - position.y);
+  const float distance_m = std::hypot(home_x - position.x, home_y - position.y);
   publishReturnHomeFeedback(distance_m);
   if (distance_m <= config_.return_home_acceptance_m) {
-    latchHoverTarget();
     return_home_action_->succeed("Arrived home");
-    transitionTo(DroneState::kHold, "arrived home");
-    return;
+    return Transition{Hold{.target = currentPose(s.carrot)}, "arrived home"};
   }
-  // Slide the hold target toward home by one tick of travel, so PX4 never sees a setpoint step
-  // it would chase at its own maximum speed.
+  // Slide the carrot toward home by one tick of travel, so PX4 never sees a setpoint step it
+  // would chase at its own maximum speed.
   const auto step_m = static_cast<float>(config_.return_home_speed_mps / config_.control_rate_hz);
-  const float dx = takeoff_x_ned_m_ - hover_x_ned_m_;
-  const float dy = takeoff_y_ned_m_ - hover_y_ned_m_;
+  const float dx = home_x - s.carrot.x;
+  const float dy = home_y - s.carrot.y;
   const float carrot_distance_m = std::hypot(dx, dy);
   if (carrot_distance_m <= step_m) {
-    hover_x_ned_m_ = takeoff_x_ned_m_;
-    hover_y_ned_m_ = takeoff_y_ned_m_;
+    s.carrot.x = home_x;
+    s.carrot.y = home_y;
   } else {
-    hover_x_ned_m_ += dx / carrot_distance_m * step_m;
-    hover_y_ned_m_ += dy / carrot_distance_m * step_m;
+    s.carrot.x += dx / carrot_distance_m * step_m;
+    s.carrot.y += dy / carrot_distance_m * step_m;
   }
+  return std::nullopt;
 }
 
-void DroneStateMachine::handleMission(const rclcpp::Time & t)
+std::optional<DroneStateMachine::Transition> DroneStateMachine::tick(
+  Mission & s, const rclcpp::Time & t)
 {
-  // While the stream is fresh the drone moves, so keep the hold target on it: a stale stream
+  // While the stream is fresh the drone moves, so keep the hold pose on it: a stale stream
   // then holds wherever the drone was, not where the mission started. In planar modes the
   // altitude stays latched from entering MISSION, since the command stream never controls it;
   // in 3D modes the stream moves z too, so the hold follows it.
   if (commandFresh(latest_command_, t, config_.command_timeout_s)) {
-    const auto mission_z_ned_m = hover_z_ned_m_;
-    latchHoverTarget();
+    const auto mission_z_ned_m = s.hold.z;
+    s.hold = currentPose(s.hold);
     if (!is3d(latest_command_->mode)) {
-      hover_z_ned_m_ = mission_z_ned_m;
+      s.hold.z = mission_z_ned_m;
     }
-    return;
+    return std::nullopt;
   }
   // A mission that stops streaming (its node crashed or was restarted) must not keep MISSION
   // forever: after command_loss_hold_s, counted from the later of the last command and entering
-  // MISSION, drop to HOLD on the hold target the stream left behind.
-  const auto last_sign_of_life = latest_command_ && latest_command_->stamp > state_enter_time_ ?
-    latest_command_->stamp : state_enter_time_;
+  // MISSION, drop to HOLD on the pose the stream left behind (no fresh latch).
+  const auto last_sign_of_life = latest_command_ && latest_command_->stamp > s.enter ?
+    latest_command_->stamp : s.enter;
   if ((t - last_sign_of_life).seconds() >= config_.command_loss_hold_s) {
     RCLCPP_WARN(get_logger(), "Mission command stream lost for %.1f s", config_.command_loss_hold_s);
-    transitionTo(DroneState::kHold, "mission command stream lost");
+    return Transition{Hold{.target = s.hold}, "mission command stream lost"};
   }
+  return std::nullopt;
 }
 
 }  // namespace mullet_core
