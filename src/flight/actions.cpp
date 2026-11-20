@@ -160,7 +160,7 @@ void DroneStateMachine::endTakeoff(const char * reason)
 
 void DroneStateMachine::resetVehicleCommandRetryTimer()
 {
-  last_vehicle_command_time_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
+  last_vehicle_command_time_.reset();
 }
 
 }  // namespace mullet_core

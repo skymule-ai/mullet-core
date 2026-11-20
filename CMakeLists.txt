@@ -22,6 +22,7 @@ set(MULLET_CORE_NODE_SOURCES
   src/flight/setpoints.cpp
   src/flight/states.cpp
   src/flight/config.cpp
+  src/flight/flight_states.cpp
   src/flight/mission_command.cpp
   src/px4/offboard_heartbeat_publisher.cpp
   src/telemetry/localization_status_publisher.cpp
@@ -88,6 +89,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_state_machine_helpers
     test/test_state_machine_helpers.cpp
     src/flight/detail/helpers.cpp
+    src/flight/flight_states.cpp
   )
   mullet_core_configure_gtest(test_state_machine_helpers)
   ament_target_dependencies(test_state_machine_helpers

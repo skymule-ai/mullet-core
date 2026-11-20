@@ -7,7 +7,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
-#include "mullet_core/flight/types.hpp"
+#include "mullet_core/flight/flight_states.hpp"
 #include "mullet_core/px4/offboard_heartbeat_publisher.hpp"
 #include "mullet_core/px4/px4_interface.hpp"
 #include "mullet_core/telemetry/localization_status_publisher.hpp"
@@ -169,7 +169,7 @@ private:
   rclcpp::Time phase_enter_time_{};
   Phase phase_{Phase::kWarmup};
   rclcpp::Time landing_start_time_{};
-  rclcpp::Time last_vehicle_command_time_{};
+  std::optional<rclcpp::Time> last_vehicle_command_time_{};
   bool position_mode_requested_for_landing_{false};
   bool landing_timeout_reported_{false};
 
