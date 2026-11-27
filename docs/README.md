@@ -13,6 +13,13 @@ and do not require a separate frontend build.
    multi-instance mapping.
 5. [Testing](testing.md): build, test, and scenario coverage.
 
+## Design Notes
+
+Proposals not yet implemented. They become part of the docs above when they land.
+
+- [Map-frame missions](map-frame-missions.md): flying missions drawn on a prior
+  map, with the map correction applied to the targets, never to PX4's estimate.
+
 ## Maintenance Rule
 
 When state-machine behavior, public actions, launch arguments, or configuration
